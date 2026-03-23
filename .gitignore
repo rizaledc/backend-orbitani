@@ -1,0 +1,7 @@
+env/
+__pycache__/
+*.pyc
+.DS_Store
+gee-key.json
+.env
+models_ml/

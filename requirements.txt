@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+pandas
+scikit-learn
+numpy
+joblib
+pydantic
+earthengine-api
+google-auth
+supabase
+passlib[bcrypt]
+bcrypt==4.0.1
+pyjwt
+python-dotenv
+google-generativeai
