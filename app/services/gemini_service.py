@@ -48,12 +48,12 @@ if GEMINI_API_KEY:
 
     # Fast Chat model — quick response for Q&A
     model_fast = genai.GenerativeModel(
-        model_name="gemini-1.5-flash-latest",
+        model_name="gemini-1.5-flash",
         system_instruction=SYSTEM_INSTRUCTION,
         generation_config=genai.GenerationConfig(max_output_tokens=512),
     )
 
-    logger.info("Gemini AI service initialized (deep=gemini-2.5-flash, fast=gemini-1.5-flash-latest).")
+    logger.info("Gemini AI service initialized (deep=gemini-2.5-flash, fast=gemini-1.5-flash).")
 else:
     logger.warning("GEMINI_API_KEY not found. Gemini AI service is disabled.")
 

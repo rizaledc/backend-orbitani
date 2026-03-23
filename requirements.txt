@@ -12,5 +12,5 @@ passlib[bcrypt]
 bcrypt==4.0.1
 pyjwt
 python-dotenv
-google-generativeai
+google-generativeai>=0.8.3
 gunicorn
