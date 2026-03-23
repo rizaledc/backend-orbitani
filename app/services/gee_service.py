@@ -24,21 +24,47 @@ LAHAN_HIBISC_COORDS = [
     [106.975437, -6.701583],
 ]
 
+import json
+
 _gee_ready = False
 
 def _init_gee() -> None:
-    """Inisialisasi koneksi ke GEE menggunakan Service Account."""
+    """
+    Inisialisasi koneksi ke GEE menggunakan Service Account.
+
+    Urutan prioritas kredensial:
+      1. File  : gee-key.json (untuk dev/local)
+      2. EnvVar: GEE_JSON_KEY (string JSON, untuk Vercel / cloud deployment)
+    """
     global _gee_ready
     try:
-        if not os.path.exists(GEE_KEY_PATH):
-            logger.warning("gee-key.json tidak ditemukan di %s — GEE dinonaktifkan", GEE_KEY_PATH)
-            return
-        credentials = ee.ServiceAccountCredentials(
-            GEE_SERVICE_ACCOUNT, GEE_KEY_PATH
-        )
+        if os.path.exists(GEE_KEY_PATH):
+            # --- Prioritas 1: File lokal ---
+            credentials = ee.ServiceAccountCredentials(
+                GEE_SERVICE_ACCOUNT, GEE_KEY_PATH
+            )
+            logger.info("GEE: menggunakan kredensial dari file gee-key.json")
+        else:
+            # --- Prioritas 2: Environment variable (Vercel / cloud) ---
+            gee_json_str = os.getenv("GEE_JSON_KEY")
+            if not gee_json_str:
+                logger.warning(
+                    "gee-key.json tidak ditemukan dan GEE_JSON_KEY tidak di-set — GEE dinonaktifkan"
+                )
+                return
+
+            key_data = json.loads(gee_json_str)
+
+            # Buat objek Credentials langsung dari dict (tidak menulis ke disk)
+            credentials = ee.ServiceAccountCredentials(
+                GEE_SERVICE_ACCOUNT, key_data=key_data
+            )
+            logger.info("GEE: menggunakan kredensial dari env var GEE_JSON_KEY")
+
         ee.Initialize(credentials=credentials, project=GEE_PROJECT)
         _gee_ready = True
-        logger.info("GEE Berhasil diinisialisasi (project=%s)", GEE_PROJECT)
+        logger.info("GEE berhasil diinisialisasi (project=%s)", GEE_PROJECT)
+
     except Exception as e:
         logger.error("Gagal inisialisasi GEE: %s", e)
 
