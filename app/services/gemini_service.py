@@ -12,7 +12,8 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Strip whitespace — Azure env vars kadang mengandung spasi/newline tersembunyi
+GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip() or None
 
 # ---------------------------------------------------------------------------
 # System Instruction (shared by both models)
@@ -37,7 +38,12 @@ model_deep = None   # gemini-2.5-flash — for /analyze-lahan
 model_fast = None   # gemini-1.5-flash — for /ask
 
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+    # Diagnostic: log masked API key untuk verifikasi di Azure Log Stream
+    masked = GEMINI_API_KEY[:8] + "..." + GEMINI_API_KEY[-4:]
+    logger.info("GEMINI_API_KEY detected: %s (len=%d)", masked, len(GEMINI_API_KEY))
+
+    # Force REST transport — bypass v1beta gRPC endpoint yang menyebabkan 404
+    genai.configure(api_key=GEMINI_API_KEY, transport="rest")
 
     # Deep Analysis model — accurate, slower
     model_deep = genai.GenerativeModel(
@@ -61,13 +67,15 @@ else:
 async def ask_fast(prompt: str) -> str:
     """Prompt ke gemini-1.5-flash — untuk konsultasi chat cepat."""
     if not model_fast:
+        logger.warning("ask_fast called but model_fast is None (API_KEY=%s)", GEMINI_API_KEY is not None)
         return "Sistem AI saat ini tidak aktif (GEMINI_API_KEY tidak ditemukan)."
     try:
+        logger.info("Calling gemini-1.5-flash (transport=rest)...")
         response = await model_fast.generate_content_async(prompt)
         return response.text
     except Exception as e:
-        logger.error("Error calling Gemini fast model: %s", e)
-        return f"Maaf, terjadi kesalahan pada layanan AI: {e}"
+        logger.error("Error calling Gemini fast model (type=%s): %s", type(e).__name__, e)
+        return f"Maaf, terjadi kesalahan pada layanan AI [{type(e).__name__}]: {e}"
 
 
 async def ask_deep(prompt: str) -> str:
