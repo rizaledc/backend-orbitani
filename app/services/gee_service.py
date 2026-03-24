@@ -137,13 +137,25 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
             .filter(ee.Filter.lt("CLOUD_COVER", 30))
             .median()
         )
+        
+        # 3.5. Koleksi Landsat 8 L2 (Surface Temperature) untuk Suhu Akurat
+        landsat_l2 = (
+            ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+            .filterDate(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
+            .filterBounds(roi_geom)
+            .filter(ee.Filter.lt("CLOUD_COVER", 30))
+            .median()
+        )
 
         # 4. Kalkulasi Indeks (Sesuai rumus riset Hibisc)
         n_index = landsat.select("B3").divide(landsat.select("B4")).log10().multiply(10).rename("N")
         p_index = landsat.select("B4").divide(landsat.select("B5")).multiply(8).rename("P")
         k_index = landsat.select("B6").multiply(500).rename("K")
         ph_index = landsat.select("B4").divide(landsat.select("B2")).multiply(2).add(6).rename("ph")
-        tci = landsat.select("B10").subtract(270).divide(0.5).clamp(0, 100).rename("temp")
+        
+        # Kalibrasi Suhu C2 L2 (ST_B10 scale: 0.00341802, offset: 149.0). Konversi Kelvin -> Celcius.
+        tci = landsat_l2.select("ST_B10").multiply(0.00341802).add(149.0).subtract(273.15).rename("temp")
+        
         ndti = landsat.normalizedDifference(["B6", "B7"]).rename("humidity")
 
         chirps = (
