@@ -125,3 +125,13 @@ Data dari ke-10 titik tersebut kemudian ditarik secara paralel dari *Landsat 8 G
 - Tidak perlu mengubah payload request apa-apa. Tetap panggil parameter `?lat=x&lon=y` seperti biasa.
 - Nilai yang kembali 100% merupakan Data Satelit Asli *(Bukan Dummy)*, dan representasinya sudah mencakup luas keseluruhan petak Lahan (karena nilai dari 10 titik telah dirata-ratakan).
 - Hasil agregasi 10 titik ini yang nantinya akan otomatis digambar oleh grafik di menu **Laporan Analitik**.
+
+---
+
+## 5. Pre-Seeding Data Historis (Januari 2024 - Januari 2026)
+
+Untuk mendukung fitur *Line Chart* di Laporan Analitik agar terlihat sangat kaya dan informatif, Backend telah **menyuntikkan (pre-load)** data historis rata-rata 10-titik dari Google Earth Engine untuk rentang waktu **2 Tahun Penuh (Jan 2024 s/d Jan 2026)** ke dalam Database.
+
+**Dampak bagi Frontend:**
+- Endpoint `GET /api/lahan/analytics` akan secara instan mengembalikan Array riwayat bulanan yang sangat panjang (total 25 series per-Lahan).
+- Pastikan komponen grafik (misal *Recharts* / *Chart.js*) Anda siap merender 25 titik sumbu X (Bulan-Tahun) tanpa *overflow* atau tumpang tindih secara UI.
