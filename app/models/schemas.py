@@ -50,3 +50,7 @@ class UserOut(BaseModel):
     role: str
 
     model_config = {"from_attributes": True}
+
+
+class RoleUpdate(BaseModel):
+    role: str = Field(..., description="Role baru: admin atau user")

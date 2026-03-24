@@ -15,6 +15,7 @@ from app.api.auth import router as auth_router
 from app.api.users import router as users_router
 from app.api.chat import router as chat_router
 from app.api.lahan import router as lahan_router
+from app.api.history import router as history_router
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,7 @@ app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(users_router, prefix="/api/users", tags=["User Management"])
 app.include_router(chat_router, prefix="/api/chat", tags=["AI Agronomist"])
 app.include_router(lahan_router, prefix="/api/lahan", tags=["WebGIS Lahan"])
+app.include_router(history_router, prefix="/api/history", tags=["History Ledger"])
 
 # ---------------------------------------------------------------
 # 4. Endpoint Halaman Depan

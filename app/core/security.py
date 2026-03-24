@@ -68,11 +68,13 @@ def get_current_user(
     return result.data[0]
 
 
-def get_superadmin_user(current_user: dict = Depends(get_current_user)) -> dict:
-    """Hanya mengizinkan user dengan role 'superadmin'."""
-    if current_user.get("role") != "superadmin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Akses ditolak — hanya superadmin yang diizinkan",
-        )
-    return current_user
+def require_roles(allowed_roles: list[str]):
+    """Closure penengah untuk mengecek apakah user memiliki salah satu dari role yang diizinkan."""
+    def role_checker(current_user: dict = Depends(get_current_user)) -> dict:
+        if current_user.get("role") not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Akses ditolak — membutuhkan role: {', '.join(allowed_roles)}",
+            )
+        return current_user
+    return role_checker

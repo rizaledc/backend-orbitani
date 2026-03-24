@@ -8,7 +8,7 @@ ARSITEKTUR LAZY LOADING:
   - Gemini (di router /chat) berjalan di ruang RAM yang bersih dari .pkl.
 """
 import logging
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel
 from app.core.security import get_current_user
 
@@ -26,14 +26,14 @@ class LocationRequest(BaseModel):
 @router.post("/analyze-location")
 async def analyze_location(
     req: LocationRequest,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
 ):
     """
     Endpoint utama untuk analisis lokasi (GPS/Klik/Manual).
     1. Cek Geofencing.
-    2. Jalankan GEE extraction.
-    3. Lazy-load model ML → prediksi → cleanup RAM.
-    4. Simpan & Kembalikan hasil.
+    2. Jalankan GEE extraction (disimpan ke DB).
+    3. Trigger Background ML Checker.
     """
     # Lazy import agar modul GEE tidak memakan RAM saat idle
     from app.services.gee_service import is_inside_hibisc, process_point_satellite_data
@@ -54,6 +54,10 @@ async def analyze_location(
 
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["message"])
+
+    # Trigger Pengecekan Auto-Retrain di Background
+    from app.services.retrain_service import check_and_trigger_retrain
+    background_tasks.add_task(check_and_trigger_retrain)
 
     return {
         "status": "success",

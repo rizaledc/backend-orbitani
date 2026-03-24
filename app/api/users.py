@@ -3,8 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
 from app.db.database import get_supabase
-from app.models.schemas import UserOut
-from app.core.security import get_superadmin_user, get_current_user
+from app.models.schemas import UserOut, RoleUpdate
+from app.core.security import get_current_user, require_roles
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -19,16 +19,11 @@ def user_stats(
     current_user: dict = Depends(get_current_user)
 ):
     """Mendapatkan statistik penggunaan (jumlah ekstraksi satelit) oleh user."""
-    # Menghitung berapa banyak lahan yang dibuat oleh user ini
-    # lalu menghitung total satellite_results untuk lahan-lahan tersebut.
-    # Karena kita belum punya direct FK user ke satellite_results (hanya lewat lahan),
-    # kita aggregate secara manual atau menggunakan join.
     lahan_res = db.table("lahan").select("id").eq("created_by", current_user["id"]).execute()
     lahan_ids = [str(l["id"]) for l in lahan_res.data]
     
     total_queries = 0
     if lahan_ids:
-        # Menghitung total rows. Supabase `.count()` bisa dipakai (menggunakan API .select("id", count="exact"))
         sat_res = db.table("satellite_results").select("id", count="exact").in_("lahan_id", lahan_ids).execute()
         total_queries = sat_res.count if sat_res.count is not None else len(sat_res.data)
 
@@ -40,15 +35,16 @@ def user_stats(
         "total_satellite_extractions": total_queries
     }
 
+
 # ---------------------------------------------------------------
-# GET / — Daftar semua user (superadmin only)
+# GET / — Daftar semua user (superadmin & admin)
 # ---------------------------------------------------------------
 @router.get("/", response_model=list[UserOut])
 def list_users(
     db: Client = Depends(get_supabase),
-    _current_user: dict = Depends(get_superadmin_user),
+    _current_user: dict = Depends(require_roles(["superadmin", "admin"])),
 ):
-    """Menampilkan semua user. Hanya dapat diakses oleh superadmin."""
+    """Menampilkan semua user (superadmin & admin)."""
     result = db.table("users").select("id, username, role").execute()
     return result.data
 
@@ -59,12 +55,12 @@ def list_users(
 @router.put("/{user_id}/role", response_model=UserOut)
 def update_user_role(
     user_id: int,
-    new_role: str,
+    data: RoleUpdate,
     db: Client = Depends(get_supabase),
-    _current_user: dict = Depends(get_superadmin_user),
+    _current_user: dict = Depends(require_roles(["superadmin"])),
 ):
     """Mengubah role user menjadi 'admin' atau 'user'. Hanya superadmin."""
-    if new_role not in ("admin", "user"):
+    if data.role not in ("admin", "user"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Role harus 'admin' atau 'user'",
@@ -78,21 +74,21 @@ def update_user_role(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tidak bisa mengubah role superadmin")
 
     # Update role
-    result = db.table("users").update({"role": new_role}).eq("id", user_id).execute()
-    logger.info("Role user ID %d diubah menjadi '%s'", user_id, new_role)
+    result = db.table("users").update({"role": data.role}).eq("id", user_id).execute()
+    logger.info("Role user ID %d diubah menjadi '%s'", user_id, data.role)
     return result.data[0]
 
 
 # ---------------------------------------------------------------
-# DELETE /{user_id} — Hapus user (superadmin only)
+# DELETE /{user_id} — Hapus user (superadmin & admin)
 # ---------------------------------------------------------------
 @router.delete("/{user_id}", status_code=status.HTTP_200_OK)
 def delete_user(
     user_id: int,
     db: Client = Depends(get_supabase),
-    _current_user: dict = Depends(get_superadmin_user),
+    _current_user: dict = Depends(require_roles(["superadmin", "admin"])),
 ):
-    """Menghapus user berdasarkan ID. Hanya superadmin."""
+    """Menghapus user berdasarkan ID. Superadmin dan admin."""
     existing = db.table("users").select("id, username, role").eq("id", user_id).execute()
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User tidak ditemukan")
