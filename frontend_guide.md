@@ -99,11 +99,11 @@ Body: { "lahan_id": 1, "latitude": -6.703, "longitude": 106.977 }
 
 ## Pakar Agronomi AI
 
-### Chat Cepat — Q&A (gemini-1.5-flash, ~2-3 detik)
+### Chat Cepat — Q&A (gemini-3.1-flash-lite-preview, ~2-3 detik)
 ```
 POST /api/chat/ask
 Body: { "message": "Berapa dosis Urea untuk pH 5.8?" }
-Resp: { "status": "success", "model": "gemini-1.5-flash", "answer": "## Orbitani Smart Analysis\n..." }
+Resp: { "status": "success", "model": "gemini-3.1-flash-lite-preview", "answer": "## Orbitani Smart Analysis\n..." }
 ```
 
 ### Analisis Mendalam — Berdasarkan data GEE terbaru (gemini-2.5-flash, ~10-20 detik)

@@ -1,8 +1,8 @@
 """
 gemini_service.py
 Dual-model Gemini AI service for Orbitani.
-  - model_deep  : gemini-2.5-flash  → deep agronomist analysis (analyze-lahan)
-  - model_fast  : gemini-1.5-flash  → quick chat / Q&A (ask)
+  - model_deep  : gemini-2.5-flash             → deep agronomist analysis (analyze-lahan)
+  - model_fast  : gemini-3.1-flash-lite-preview → quick chat / Q&A (ask)
 """
 import os
 import logging
@@ -35,7 +35,7 @@ ATURAN JAWABAN:
 - Gunakan terminologi "Orbitani Smart Analysis"."""
 
 model_deep = None   # gemini-2.5-flash — for /analyze-lahan
-model_fast = None   # gemini-1.5-flash — for /ask
+model_fast = None   # gemini-3.1-flash-lite-preview — for /ask
 
 if GEMINI_API_KEY:
     # Diagnostic: log masked API key untuk verifikasi di Azure Log Stream
@@ -52,25 +52,25 @@ if GEMINI_API_KEY:
         generation_config=genai.GenerationConfig(max_output_tokens=1024),
     )
 
-    # Fast Chat model — quick response for Q&A
+    # Fast Chat model — quick response for Q&A (migrated from deprecated 1.5-flash)
     model_fast = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
+        model_name="gemini-3.1-flash-lite-preview",
         system_instruction=SYSTEM_INSTRUCTION,
         generation_config=genai.GenerationConfig(max_output_tokens=512),
     )
 
-    logger.info("Gemini AI service initialized (deep=gemini-2.5-flash, fast=gemini-1.5-flash).")
+    logger.info("Gemini AI service initialized (deep=gemini-2.5-flash, fast=gemini-3.1-flash-lite-preview).")
 else:
     logger.warning("GEMINI_API_KEY not found. Gemini AI service is disabled.")
 
 
 async def ask_fast(prompt: str) -> str:
-    """Prompt ke gemini-1.5-flash — untuk konsultasi chat cepat."""
+    """Prompt ke gemini-3.1-flash-lite-preview — untuk konsultasi chat cepat."""
     if not model_fast:
         logger.warning("ask_fast called but model_fast is None (API_KEY=%s)", GEMINI_API_KEY is not None)
         return "Sistem AI saat ini tidak aktif (GEMINI_API_KEY tidak ditemukan)."
     try:
-        logger.info("Calling gemini-1.5-flash (transport=rest)...")
+        logger.info("Calling gemini-3.1-flash-lite-preview (transport=rest)...")
         response = await model_fast.generate_content_async(prompt)
         return response.text
     except Exception as e:
@@ -83,11 +83,12 @@ async def ask_deep(prompt: str) -> str:
     if not model_deep:
         return "Sistem AI saat ini tidak aktif (GEMINI_API_KEY tidak ditemukan)."
     try:
+        logger.info("Calling gemini-2.5-flash (transport=rest)...")
         response = await model_deep.generate_content_async(prompt)
         return response.text
     except Exception as e:
-        logger.error("Error calling Gemini deep model: %s", e)
-        return f"Maaf, terjadi kesalahan pada layanan AI: {e}"
+        logger.error("Error calling Gemini deep model (type=%s): %s", type(e).__name__, e)
+        return f"Maaf, terjadi kesalahan pada layanan AI [{type(e).__name__}]: {e}"
 
 
 # Backward-compatible alias (used by existing code if any)
