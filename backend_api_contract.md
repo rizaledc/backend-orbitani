@@ -94,7 +94,7 @@ Backend **TIDAK** menggunakan standar `OAuth2PasswordRequestForm` (multipart/for
 ```json
 {
   "status": "success",
-  "model": "gemini-3.1-flash-lite-preview",
+  "model": "gemini-3.1-flash",
   "answer": "Jawaban dari AI..."
 }
 ```

@@ -4,7 +4,7 @@
 
 | Fitur | Status | Detail |
 |-------|--------|--------|
-| Dual-Model Gemini | ✅ Aktif | `gemini-3.1-flash-lite-preview` (chat, ~2-3s) / `gemini-2.5-flash` (analyze, ~10-20s) |
+| Dual-Model Gemini | ✅ Aktif | `gemini-3.1-flash` (chat, ~2-3s) / `gemini-2.5-flash` (analyze, ~10-20s) |
 | Rate Limiting (5 RPM) | ✅ Aktif | Server log: `POST /api/chat/ask 429 Too Many Requests` |
 | Error Handling AI | ✅ Aktif | Try-except pada [ask_fast](file:///c:/backend-orbitani/app/services/gemini_service.py#61-71) & [ask_deep](file:///c:/backend-orbitani/app/services/gemini_service.py#73-83), server tidak crash |
 | Cleanup | ✅ Selesai | `test_gemini.py` dihapus |
@@ -37,7 +37,7 @@ flowchart TD
     GIS --> Supabase[(Supabase DB)]
     ChatAsk --> RateLimit{Rate Limiter}
     ChatDeep --> RateLimit
-    RateLimit -- role=user limit=5RPM --> Gemini1_5[gemini-3.1-flash-lite-preview]
+    RateLimit -- role=user limit=5RPM --> Gemini1_5[gemini-3.1-flash]
     RateLimit -- deep analysis --> Gemini2_5[gemini-2.5-flash]
     RateLimit -- 429 → Retry-After --> FE
     ChatDeep --> GEE[Google Earth Engine]
