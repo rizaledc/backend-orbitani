@@ -3,11 +3,11 @@ gemini_service.py
 Dual-model Gemini AI service for Orbitani.
   - model_deep  : gemini-2.5-flash             → deep agronomist analysis (analyze-lahan)
   - model_fast  : gemini-3.1-flash-lite-preview → quick chat / Q&A (ask)
+
+SDK: google-genai (baru) — menggunakan `from google import genai`
 """
-import asyncio
 import os
 import logging
-import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -35,79 +35,78 @@ ATURAN JAWABAN:
 - Jika Nitrogen (N) rendah, fokus pada efisiensi pupuk Urea atau ZA.
 - Gunakan terminologi "Orbitani Smart Analysis"."""
 
-model_deep = None   # gemini-2.5-flash — for /analyze-lahan
-model_fast = None   # gemini-3.1-flash-lite-preview — for /ask
+# ---------------------------------------------------------------------------
+# Inisialisasi Client (SDK baru: google-genai)
+# ---------------------------------------------------------------------------
+client = None
 
 if GEMINI_API_KEY:
-    # Diagnostic: log masked API key untuk verifikasi di Azure Log Stream
-    masked = GEMINI_API_KEY[:8] + "..." + GEMINI_API_KEY[-4:]
-    logger.info("GEMINI_API_KEY detected: %s (len=%d)", masked, len(GEMINI_API_KEY))
+    try:
+        from google import genai
 
-    # Force REST transport — bypass v1beta gRPC endpoint yang menyebabkan 404
-    genai.configure(api_key=GEMINI_API_KEY, transport="rest")
+        # Diagnostic: log masked API key
+        masked = GEMINI_API_KEY[:8] + "..." + GEMINI_API_KEY[-4:]
+        logger.info("GEMINI_API_KEY detected: %s (len=%d)", masked, len(GEMINI_API_KEY))
 
-    # Deep Analysis model — accurate, slower
-    model_deep = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
-        system_instruction=SYSTEM_INSTRUCTION,
-        generation_config=genai.GenerationConfig(max_output_tokens=1024),
-    )
-
-    # Fast Chat model — quick response for Q&A (migrated from deprecated 1.5-flash)
-    model_fast = genai.GenerativeModel(
-        model_name="gemini-3.1-flash-lite-preview",
-        system_instruction=SYSTEM_INSTRUCTION,
-        generation_config=genai.GenerationConfig(max_output_tokens=512),
-    )
-
-    logger.info("Gemini AI service initialized (deep=gemini-2.5-flash, fast=gemini-3.1-flash-lite-preview).")
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        logger.info("Gemini Client initialized (google-genai SDK).")
+    except Exception as e:
+        logger.error("Failed to initialize Gemini Client: %s", e)
+        print(f"ERROR GEMINI INIT: {e}")
+        client = None
 else:
     logger.warning("GEMINI_API_KEY not found. Gemini AI service is disabled.")
 
 
+# ---------------------------------------------------------------------------
+# Fast Chat — gemini-3.1-flash-lite-preview
+# ---------------------------------------------------------------------------
 async def ask_fast(prompt: str) -> str:
     """Prompt ke gemini-3.1-flash-lite-preview — untuk konsultasi chat cepat."""
-    if not model_fast:
-        logger.warning("ask_fast called but model_fast is None (API_KEY=%s)", GEMINI_API_KEY is not None)
+    if not client:
+        logger.warning("ask_fast called but client is None (no API key).")
         return "Sistem AI saat ini tidak aktif (GEMINI_API_KEY tidak ditemukan)."
     try:
-        logger.info("Calling gemini-3.1-flash-lite-preview (transport=rest)...")
-        # Try async first; fallback to sync in thread if not awaitable
-        if hasattr(model_fast, 'generate_content_async'):
-            response = await model_fast.generate_content_async(prompt)
-        else:
-            response = await asyncio.to_thread(model_fast.generate_content, prompt)
-        return response.text
-    except TypeError:
-        # Fallback: generate_content_async returned non-awaitable
-        logger.warning("generate_content_async not awaitable, falling back to sync")
-        response = await asyncio.to_thread(model_fast.generate_content, prompt)
+        logger.info("Calling gemini-3.1-flash-lite-preview...")
+        response = client.models.generate_content(
+            model="gemini-3.1-flash-lite-preview",
+            contents=prompt,
+            config={
+                "system_instruction": SYSTEM_INSTRUCTION,
+                "max_output_tokens": 512,
+            },
+        )
         return response.text
     except Exception as e:
+        print(f"ERROR GEMINI FAST: {e}")
         logger.error("Error calling Gemini fast model (type=%s): %s", type(e).__name__, e)
         return f"Maaf, terjadi kesalahan pada layanan AI [{type(e).__name__}]: {e}"
 
 
+# ---------------------------------------------------------------------------
+# Deep Analysis — gemini-2.5-flash
+# ---------------------------------------------------------------------------
 async def ask_deep(prompt: str) -> str:
     """Prompt ke gemini-2.5-flash — untuk analisis lahan mendalam."""
-    if not model_deep:
+    if not client:
         return "Sistem AI saat ini tidak aktif (GEMINI_API_KEY tidak ditemukan)."
     try:
-        logger.info("Calling gemini-2.5-flash (transport=rest)...")
-        if hasattr(model_deep, 'generate_content_async'):
-            response = await model_deep.generate_content_async(prompt)
-        else:
-            response = await asyncio.to_thread(model_deep.generate_content, prompt)
-        return response.text
-    except TypeError:
-        logger.warning("generate_content_async not awaitable, falling back to sync")
-        response = await asyncio.to_thread(model_deep.generate_content, prompt)
+        logger.info("Calling gemini-2.5-flash...")
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config={
+                "system_instruction": SYSTEM_INSTRUCTION,
+                "max_output_tokens": 1024,
+            },
+        )
         return response.text
     except Exception as e:
+        print(f"ERROR GEMINI DEEP: {e}")
         logger.error("Error calling Gemini deep model (type=%s): %s", type(e).__name__, e)
         return f"Maaf, terjadi kesalahan pada layanan AI [{type(e).__name__}]: {e}"
 
 
-# Backward-compatible alias (used by existing code if any)
+# Backward-compatible alias
 async def ask_agronomist(prompt: str) -> str:
     return await ask_fast(prompt)
