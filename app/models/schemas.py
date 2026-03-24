@@ -31,6 +31,8 @@ class UserCreate(BaseModel):
         max_length=72,
         description="Password minimal 8 karakter, maksimal 72 (batas bcrypt)",
     )
+    name: str | None = Field(default=None, description="Nama Lengkap (Khusus Role User)")
+    email: str | None = Field(default=None, description="Alamat Email (Khusus Role User)")
 
 
 class UserLogin(BaseModel):
@@ -48,6 +50,9 @@ class UserOut(BaseModel):
     id: int
     username: str
     role: str
+    name: str | None = None
+    email: str | None = None
+    description: str | None = None
 
     model_config = {"from_attributes": True}
 

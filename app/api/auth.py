@@ -24,11 +24,13 @@ def register(data: UserCreate, db: Client = Depends(get_supabase)):
             detail=f"Username '{data.username}' sudah terdaftar",
         )
 
-    # Buat user baru
+    # Buat user baru (sertakan nama & email jika ada)
     new_user = db.table("users").insert({
         "username": data.username,
         "password_hash": hash_password(data.password),
         "role": "user",
+        "name": data.name,
+        "email": data.email
     }).execute()
 
     user = new_user.data[0]
@@ -68,10 +70,13 @@ def login(data: UserLogin, db: Client = Depends(get_supabase)):
 # GET /me
 # ---------------------------------------------------------------
 @router.get("/me")
-def get_me(current_user: dict = Depends(get_current_user)):
-    """Mendapatkan profil user yang sedang login."""
-    return {
-        "id": current_user["id"],
-        "username": current_user["username"],
-        "role": current_user["role"]
-    }
+def get_me(
+    db: Client = Depends(get_supabase),
+    current_user: dict = Depends(get_current_user)
+):
+    """Mendapatkan profil lengkap user yang sedang login."""
+    res = db.table("users").select("id, username, role, name, email, description").eq("id", current_user["id"]).execute()
+    if not res.data:
+         raise HTTPException(status_code=404, detail="User not found")
+         
+    return res.data[0]
