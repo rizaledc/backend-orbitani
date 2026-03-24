@@ -3,7 +3,7 @@ chat.py
 AI Agronomist endpoints for Orbitani.
 
 Dual-Model Strategy:
-  POST /ask            → gemini-3.1-flash (fast, ~2-3s)  — Q&A chat
+  POST /ask            → gemini-flash-lite-latest (fast, ~2-3s)  — Q&A chat
   POST /analyze-lahan  → gemini-2.5-flash (deep, ~15-20s) — satellite analysis
 
 Rate Limiting:
@@ -32,7 +32,7 @@ class AnalyzeLahanRequest(BaseModel):
 
 
 # ---------------------------------------------------------------
-# POST /ask — Quick Q&A (gemini-3.1-flash)
+# POST /ask — Quick Q&A (gemini-flash-lite-latest)
 # ---------------------------------------------------------------
 @router.post("/ask")
 async def ask_agronomist_api(
@@ -41,14 +41,14 @@ async def ask_agronomist_api(
 ):
     """
     Konsultasi tanya jawab bebas dengan AI Agronomist.
-    Menggunakan gemini-3.1-flash untuk respons cepat (~2-3 detik).
+    Menggunakan gemini-flash-lite-latest untuk respons cepat (~2-3 detik).
     Rate limit: 5 RPM untuk role 'user'.
     """
     check_rate_limit(current_user)
 
     logger.info("User '%s' asking fast AI: %s...", current_user["username"], req.message[:60])
     answer = await ask_fast(req.message)
-    return {"status": "success", "model": "gemini-3.1-flash", "answer": answer}
+    return {"status": "success", "model": "gemini-flash-lite-latest", "answer": answer}
 
 
 # ---------------------------------------------------------------

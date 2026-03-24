@@ -2,7 +2,7 @@
 gemini_service.py
 Dual-model Gemini AI service for Orbitani.
   - model_deep  : gemini-2.5-flash             → deep agronomist analysis (analyze-lahan)
-  - model_fast  : gemini-3.1-flash → quick chat / Q&A (ask)
+  - model_fast  : gemini-flash-lite-latest → quick chat / Q&A (ask)
 
 SDK: google-genai (baru) — menggunakan `from google import genai`
 """
@@ -59,17 +59,17 @@ else:
 
 
 # ---------------------------------------------------------------------------
-# Fast Chat — gemini-3.1-flash
+# Fast Chat — gemini-flash-lite-latest
 # ---------------------------------------------------------------------------
 async def ask_fast(prompt: str) -> str:
-    """Prompt ke gemini-3.1-flash — untuk konsultasi chat cepat."""
+    """Prompt ke gemini-flash-lite-latest — untuk konsultasi chat cepat."""
     if not client:
         logger.warning("ask_fast called but client is None (no API key).")
         return "Sistem AI saat ini tidak aktif (GEMINI_API_KEY tidak ditemukan)."
     try:
-        logger.info("Calling gemini-3.1-flash...")
+        logger.info("Calling gemini-flash-lite-latest...")
         response = client.models.generate_content(
-            model="gemini-3.1-flash",
+            model="gemini-flash-lite-latest",
             contents=prompt,
             config={
                 "system_instruction": SYSTEM_INSTRUCTION,
