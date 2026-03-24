@@ -4,6 +4,7 @@ Dual-model Gemini AI service for Orbitani.
   - model_deep  : gemini-2.5-flash             → deep agronomist analysis (analyze-lahan)
   - model_fast  : gemini-3.1-flash-lite-preview → quick chat / Q&A (ask)
 """
+import asyncio
 import os
 import logging
 import google.generativeai as genai
@@ -71,7 +72,16 @@ async def ask_fast(prompt: str) -> str:
         return "Sistem AI saat ini tidak aktif (GEMINI_API_KEY tidak ditemukan)."
     try:
         logger.info("Calling gemini-3.1-flash-lite-preview (transport=rest)...")
-        response = await model_fast.generate_content_async(prompt)
+        # Try async first; fallback to sync in thread if not awaitable
+        if hasattr(model_fast, 'generate_content_async'):
+            response = await model_fast.generate_content_async(prompt)
+        else:
+            response = await asyncio.to_thread(model_fast.generate_content, prompt)
+        return response.text
+    except TypeError:
+        # Fallback: generate_content_async returned non-awaitable
+        logger.warning("generate_content_async not awaitable, falling back to sync")
+        response = await asyncio.to_thread(model_fast.generate_content, prompt)
         return response.text
     except Exception as e:
         logger.error("Error calling Gemini fast model (type=%s): %s", type(e).__name__, e)
@@ -84,7 +94,14 @@ async def ask_deep(prompt: str) -> str:
         return "Sistem AI saat ini tidak aktif (GEMINI_API_KEY tidak ditemukan)."
     try:
         logger.info("Calling gemini-2.5-flash (transport=rest)...")
-        response = await model_deep.generate_content_async(prompt)
+        if hasattr(model_deep, 'generate_content_async'):
+            response = await model_deep.generate_content_async(prompt)
+        else:
+            response = await asyncio.to_thread(model_deep.generate_content, prompt)
+        return response.text
+    except TypeError:
+        logger.warning("generate_content_async not awaitable, falling back to sync")
+        response = await asyncio.to_thread(model_deep.generate_content, prompt)
         return response.text
     except Exception as e:
         logger.error("Error calling Gemini deep model (type=%s): %s", type(e).__name__, e)
