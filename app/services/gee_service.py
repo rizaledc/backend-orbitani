@@ -29,34 +29,40 @@ LAHAN_HIBISC_COORDS = [
 ]
 
 import json
+import tempfile
 
 _gee_ready = False
 
-def _init_gee() -> None:
-    """
-    Inisialisasi koneksi ke GEE menggunakan Service Account via Environment Variables (Azure).
-    """
+def _init_gee():
     global _gee_ready
     try:
-        sa_email = os.environ.get("GEE_SERVICE_ACCOUNT")
-        json_key_str = os.environ.get("GEE_JSON_KEY")
         project = os.environ.get("GEE_PROJECT")
-
-        if sa_email and json_key_str:
-            key_dict = json.loads(json_key_str)
-            credentials = ee.ServiceAccountCredentials(sa_email, key_data=key_dict)
-            ee.Initialize(credentials=credentials, project=project)
-            logger.info("GEE berhasil diinisialisasi menggunakan credentials dari environment variables.")
-        else:
-            # Fallback untuk lokal
-            ee.Initialize(project=project)
-            logger.info(f"GEE berhasil diinisialisasi (fallback lokal project={project}).")
+        json_str = os.environ.get("GEE_JSON_KEY")
+        
+        if json_str and project:
+            # Bersihkan string dari ekstra kutip yang ditambahkan Azure
+            json_str = json_str.strip("'").strip('"')
             
+            # Tulis ke temp file
+            fd, temp_path = tempfile.mkstemp(suffix=".json")
+            with os.fdopen(fd, 'w') as f:
+                f.write(json_str)
+                
+            # Paksa Google Auth menggunakan file tersebut
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
+            ee.Initialize(project=project)
+            logger.info("GEE Authenticated via Temp File!")
+        else:
+            if project:
+                ee.Initialize(project=project)
+                logger.info("GEE Authenticated via Local Fallback.")
+            else:
+                logger.warning("GEE_PROJECT not found, skipping initialization.")
+                return
         _gee_ready = True
-
     except Exception as e:
-        logger.error("Gagal inisialisasi GEE: %s", e)
-        print(f"Gagal inisialisasi GEE: {e}")
+        logger.error(f"GAGAL LOGIN GEE: {str(e)}")
+        raise RuntimeError(f"GAGAL LOGIN GEE: {str(e)}")
 
 _init_gee()
 

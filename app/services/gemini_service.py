@@ -79,7 +79,6 @@ async def ask_fast(prompt: str) -> str:
             contents=prompt,
             config={
                 "system_instruction": SYSTEM_INSTRUCTION,
-                "max_output_tokens": 512,
             },
         )
         return response.text
@@ -103,7 +102,6 @@ async def ask_deep(prompt: str) -> str:
             contents=prompt,
             config={
                 "system_instruction": SYSTEM_INSTRUCTION,
-                "max_output_tokens": 1024,
             },
         )
         return response.text
