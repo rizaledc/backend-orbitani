@@ -1,8 +1,8 @@
 """
 gemini_service.py
 Dual-model Gemini AI service for Orbitani.
-  - model_deep  : gemini-3-flash-preview          → deep agronomist analysis (analyze-lahan)
-  - model_fast  : gemini-3.1-flash-lite-preview    → quick chat / Q&A (ask)
+  - model_deep  : gemini-2.5-flash          → deep agronomist analysis (analyze-lahan)
+  - model_fast  : gemini-2.5-flash          → quick chat / Q&A (ask)
 
 SDK: google-genai (baru) — menggunakan `from google import genai`
 """
@@ -19,8 +19,8 @@ GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip() or None
 # ---------------------------------------------------------------------------
 # Model Constants
 # ---------------------------------------------------------------------------
-MODEL_FAST = "gemini-3.1-flash-lite-preview"
-MODEL_DEEP = "gemini-3-flash-preview"
+MODEL_FAST = "gemini-2.5-flash"
+MODEL_DEEP = "gemini-2.5-flash"
 
 # ---------------------------------------------------------------------------
 # System Instruction (shared by both models)
@@ -65,10 +65,10 @@ else:
 
 
 # ---------------------------------------------------------------------------
-# Fast Chat — gemini-3.1-flash-lite-preview
+# Fast Chat — gemini-2.5-flash
 # ---------------------------------------------------------------------------
 async def ask_fast(prompt: str) -> str:
-    """Prompt ke gemini-3.1-flash-lite-preview — untuk konsultasi chat cepat."""
+    """Prompt ke gemini-2.5-flash — untuk konsultasi chat cepat."""
     if not client:
         logger.warning("ask_fast called but client is None (no API key).")
         return "Sistem AI saat ini tidak aktif (GEMINI_API_KEY tidak ditemukan)."
@@ -90,10 +90,10 @@ async def ask_fast(prompt: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Deep Analysis — gemini-3-flash-preview
+# Deep Analysis — gemini-2.5-flash
 # ---------------------------------------------------------------------------
 async def ask_deep(prompt: str) -> str:
-    """Prompt ke gemini-3-flash-preview — untuk analisis lahan mendalam."""
+    """Prompt ke gemini-2.5-flash — untuk analisis lahan mendalam."""
     if not client:
         return "Sistem AI saat ini tidak aktif (GEMINI_API_KEY tidak ditemukan)."
     try:

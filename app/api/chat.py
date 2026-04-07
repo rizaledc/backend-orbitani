@@ -3,13 +3,13 @@ chat.py
 AI Agronomist endpoints for Orbitani.
 
 Dual-Model Strategy:
-  POST /ask            → gemini-3.1-flash-lite-preview (fast, ~2-3s)  — Q&A chat
-  POST /analyze-lahan  → gemini-3-flash-preview (deep, ~15-20s)      — satellite analysis
+  POST /ask            → gemini-2.5-flash (fast, ~2-3s)  — Q&A chat
+  POST /analyze-lahan  → gemini-2.5-flash (deep, ~15-20s)      — satellite analysis
 
 Flow analyze-lahan:
   1. Ambil koordinat lahan dari DB
   2. Trigger GEE Hybrid (Sentinel-2 + Landsat-9) → simpan data fresh ke DB
-  3. Kirim data fresh ke Gemini 3 Flash untuk analisis mendalam
+  3. Kirim data fresh ke Gemini 2.5 Flash untuk analisis mendalam
 
 Rate Limiting:
   Role 'user' : 5 RPM  |  Role 'admin'/'superadmin' : unlimited
@@ -37,7 +37,7 @@ class AnalyzeLahanRequest(BaseModel):
 
 
 # ---------------------------------------------------------------
-# POST /ask — Quick Q&A (gemini-3.1-flash-lite-preview)
+# POST /ask — Quick Q&A (gemini-2.5-flash)
 # ---------------------------------------------------------------
 @router.post("/ask")
 async def ask_agronomist_api(
@@ -46,7 +46,7 @@ async def ask_agronomist_api(
 ):
     """
     Konsultasi tanya jawab bebas dengan AI Agronomist.
-    Menggunakan gemini-3.1-flash-lite-preview untuk respons cepat (~2-3 detik).
+    Menggunakan gemini-2.5-flash untuk respons cepat (~2-3 detik).
     Rate limit: 5 RPM untuk role 'user'.
     """
     check_rate_limit(current_user)
@@ -57,7 +57,7 @@ async def ask_agronomist_api(
 
 
 # ---------------------------------------------------------------
-# POST /analyze-lahan — Deep Analysis (gemini-3-flash-preview)
+# POST /analyze-lahan — Deep Analysis (gemini-2.5-flash)
 # ---------------------------------------------------------------
 @router.post("/analyze-lahan")
 async def analyze_lahan_api(
@@ -67,13 +67,13 @@ async def analyze_lahan_api(
 ):
     """
     Menganalisis lahan menggunakan data satelit FRESH dari GEE Hybrid
-    (Sentinel-2 + Landsat-9) lalu dilempar ke Gemini 3 Flash.
+    (Sentinel-2 + Landsat-9) lalu dilempar ke Gemini 2.5 Flash.
 
     Flow:
       1. Ambil koordinat centroid lahan dari tabel lahan.
       2. Trigger sinkronisasi GEE (Sentinel-2 optik + Landsat-9 termal).
       3. Data fresh disimpan ke DB oleh gee_service.
-      4. Data fresh tersebut dikirim ke Gemini 3 Flash untuk analisis.
+      4. Data fresh tersebut dikirim ke Gemini 2.5 Flash untuk analisis.
 
     Rate limit: 5 RPM untuk role 'user'.
     """
