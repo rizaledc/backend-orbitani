@@ -90,10 +90,10 @@ def seed_historical_monthly():
             optical_composite = n_index.addBands([p_index, k_index, ph_index, ndti])
 
             # =================================================================
-            # Landsat-8 L2 (Surface Temperature ONLY) — Resolusi 30m
+            # Landsat-9 L2 (Surface Temperature ONLY) — Resolusi 30m
             # =================================================================
             landsat_l2 = (
-                ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+                ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
                 .filterDate(start_date, end_date)
                 .filterBounds(roi_geom)
                 # Jangan filter cloud terlalu ketat buat history bulanan
@@ -151,7 +151,7 @@ def seed_historical_monthly():
                     avg_stats["humidity"] += float(props.get("humidity", 0))
                     valid_optical += 1
 
-            # -- Suhu dari Landsat-8 L2 --
+            # -- Suhu dari Landsat-9 L2 --
             temp_features = temp_stats.get("features", [])
             valid_temp = 0
             for feat in temp_features:

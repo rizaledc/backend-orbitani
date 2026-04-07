@@ -131,7 +131,7 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
     """
     Hybrid Approach:
       - Sentinel-2 (COPERNICUS/S2_SR_HARMONIZED) → parameter optik (N, P, K, pH, humidity)
-      - Landsat-8 L2 (LANDSAT/LC08/C02/T1_L2)   → suhu permukaan (ST_B10)
+      - Landsat-9 L2 (LANDSAT/LC09/C02/T1_L2)   → suhu permukaan (ST_B10)
       - CHIRPS                                     → curah hujan
     """
     try:
@@ -199,10 +199,10 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
         optical_composite = n_index.addBands([p_index, k_index, ph_index, ndti])
 
         # =====================================================================
-        # 3.5. Landsat-8 L2 (Surface Temperature ONLY) — Resolusi 30m
+        # 3.5. Landsat-9 L2 (Surface Temperature ONLY) — Resolusi 30m
         # =====================================================================
         landsat_l2 = (
-            ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+            ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
             .filterDate(date_start_str, date_end_str)
             .filterBounds(roi_geom)
             .filter(ee.Filter.lt("CLOUD_COVER", 30))
@@ -269,7 +269,7 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
         else:
             return {"error": "Zero Result", "message": "Tidak ada sinyal Sentinel-2 yang valid pada ke-10 titik tersebut."}
 
-        # -- Suhu dari Landsat-8 L2 --
+        # -- Suhu dari Landsat-9 L2 --
         temp_features = temp_stats.get("features", [])
         valid_temp = 0
         for feat in temp_features:
