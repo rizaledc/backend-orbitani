@@ -74,6 +74,47 @@ def _init_gee() -> None:
 
 _init_gee()
 
+
+# ---------------------------------------------------------------------------
+# Sentinel-2: Cloud Masking & Scaling
+# ---------------------------------------------------------------------------
+def _mask_s2_clouds(image):
+    """
+    Masking piksel awan & bayangan awan menggunakan band SCL (Scene Classification Layer).
+    SCL values yang di-mask:
+      3 = Cloud Shadow
+      8 = Cloud Medium Probability
+      9 = Cloud High Probability
+     10 = Thin Cirrus
+    """
+    scl = image.select("SCL")
+    mask = (
+        scl.neq(3)   # Cloud Shadow
+        .And(scl.neq(8))   # Cloud Medium Probability
+        .And(scl.neq(9))   # Cloud High Probability
+        .And(scl.neq(10))  # Thin Cirrus
+    )
+    return image.updateMask(mask)
+
+
+def _scale_s2(image):
+    """
+    Mengalikan band optik Sentinel-2 dengan faktor skala 0.0001
+    sesuai spesifikasi COPERNICUS/S2_SR_HARMONIZED.
+    Band yang di-scale: B1-B9, B11, B12, B8A
+    """
+    optical_bands = image.select(
+        ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B8A", "B9", "B11", "B12"]
+    ).multiply(0.0001)
+    # Gabungkan kembali band non-optik (SCL, QA60, dll.)
+    return image.addBands(optical_bands, overwrite=True)
+
+
+def _preprocess_s2(image):
+    """Pipeline preprocessing: cloud mask → scale."""
+    return _scale_s2(_mask_s2_clouds(image))
+
+
 # ---------------------------------------------------------------------------
 # Fungsi Validasi Area (Geofencing)
 # ---------------------------------------------------------------------------
@@ -88,7 +129,10 @@ def is_inside_hibisc(lat: float, lon: float) -> bool:
 # ---------------------------------------------------------------------------
 def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
     """
-    Menarik data GEE untuk satu titik koordinat dan menyimpan ke Supabase.
+    Hybrid Approach:
+      - Sentinel-2 (COPERNICUS/S2_SR_HARMONIZED) → parameter optik (N, P, K, pH, humidity)
+      - Landsat-8 L2 (LANDSAT/LC08/C02/T1_L2)   → suhu permukaan (ST_B10)
+      - CHIRPS                                     → curah hujan
     """
     try:
         import numpy as np
@@ -128,76 +172,128 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
         
         end_date = datetime.utcnow()
         start_date = end_date - timedelta(days=365)
+        date_start_str = start_date.strftime("%Y-%m-%d")
+        date_end_str = end_date.strftime("%Y-%m-%d")
 
-        # 3. Koleksi Landsat 8 TOA (difilter keseluruhan ROI)
-        landsat = (
-            ee.ImageCollection("LANDSAT/LC08/C02/T1_TOA")
-            .filterDate(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
+        # =====================================================================
+        # 3. Sentinel-2 SR Harmonized (Parameter Optik) — Resolusi 10m
+        # =====================================================================
+        sentinel2 = (
+            ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+            .filterDate(date_start_str, date_end_str)
             .filterBounds(roi_geom)
-            .filter(ee.Filter.lt("CLOUD_COVER", 30))
+            .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 20))
+            .map(_preprocess_s2)
             .median()
         )
-        
-        # 3.5. Koleksi Landsat 8 L2 (Surface Temperature) untuk Suhu Akurat
+
+        # Band Mapping Sentinel-2:
+        #   B2=Blue, B3=Green, B4=Red, B8=NIR, B11=SWIR1, B12=SWIR2
+        n_index = sentinel2.select("B3").divide(sentinel2.select("B4")).log10().multiply(10).rename("N")
+        p_index = sentinel2.select("B4").divide(sentinel2.select("B8")).multiply(8).rename("P")
+        k_index = sentinel2.select("B11").multiply(500).rename("K")
+        ph_index = sentinel2.select("B4").divide(sentinel2.select("B2")).multiply(2).add(6).rename("ph")
+        ndti = sentinel2.normalizedDifference(["B11", "B12"]).rename("humidity")
+
+        # Komposit optik Sentinel-2
+        optical_composite = n_index.addBands([p_index, k_index, ph_index, ndti])
+
+        # =====================================================================
+        # 3.5. Landsat-8 L2 (Surface Temperature ONLY) — Resolusi 30m
+        # =====================================================================
         landsat_l2 = (
             ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
-            .filterDate(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
+            .filterDate(date_start_str, date_end_str)
             .filterBounds(roi_geom)
             .filter(ee.Filter.lt("CLOUD_COVER", 30))
             .median()
         )
-
-        # 4. Kalkulasi Indeks (Sesuai rumus riset Hibisc)
-        n_index = landsat.select("B3").divide(landsat.select("B4")).log10().multiply(10).rename("N")
-        p_index = landsat.select("B4").divide(landsat.select("B5")).multiply(8).rename("P")
-        k_index = landsat.select("B6").multiply(500).rename("K")
-        ph_index = landsat.select("B4").divide(landsat.select("B2")).multiply(2).add(6).rename("ph")
-        
         # Kalibrasi Suhu C2 L2 (ST_B10 scale: 0.00341802, offset: 149.0). Konversi Kelvin -> Celcius.
         tci = landsat_l2.select("ST_B10").multiply(0.00341802).add(149.0).subtract(273.15).rename("temp")
-        
-        ndti = landsat.normalizedDifference(["B6", "B7"]).rename("humidity")
 
+        # =====================================================================
+        # 4. CHIRPS Rainfall
+        # =====================================================================
         chirps = (
             ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
-            .filterDate(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
+            .filterDate(date_start_str, date_end_str)
             .filterBounds(roi_geom)
             .select("precipitation").sum().rename("rainfall")
         )
 
-        composite = n_index.addBands([p_index, k_index, ph_index, tci, ndti, chirps])
+        # =====================================================================
+        # 5. Reduce Regions — Sentinel-2 @10m, Landsat thermal @30m
+        # =====================================================================
+        # Reduce optik (Sentinel-2) pada resolusi 10m
+        optical_stats = optical_composite.reduceRegions(
+            collection=points_fc,
+            reducer=ee.Reducer.mean(),
+            scale=10
+        ).getInfo()
 
-        # 5. Reduksi rata-rata ditiap titik (ReduceRegions)
-        stats_collection = composite.reduceRegions(
+        # Reduce suhu (Landsat L2) pada resolusi 30m
+        temp_stats = tci.reduceRegions(
             collection=points_fc,
             reducer=ee.Reducer.mean(),
             scale=30
         ).getInfo()
 
-        features_data = stats_collection.get("features", [])
+        # Reduce curah hujan (CHIRPS) pada resolusi 5000m (native ~5.5km)
+        rain_stats = chirps.reduceRegions(
+            collection=points_fc,
+            reducer=ee.Reducer.mean(),
+            scale=5000
+        ).getInfo()
+
+        # =====================================================================
+        # 6. Rata-ratakan 10 titik → 1 konklusi
+        # =====================================================================
         avg_stats = {"N": 0.0, "P": 0.0, "K": 0.0, "ph": 0.0, "temp": 0.0, "humidity": 0.0, "rainfall": 0.0}
-        valid_count = 0
-        
-        # Iterasi 10 titik dan rata-ratakan hasilnya untuk 1 konklusi Lahan 
-        for feat in features_data:
+
+        # -- Optik dari Sentinel-2 --
+        optical_features = optical_stats.get("features", [])
+        valid_optical = 0
+        for feat in optical_features:
             props = feat.get("properties", {})
             if props.get("N") is not None:
                 avg_stats["N"] += float(props.get("N", 0))
                 avg_stats["P"] += float(props.get("P", 0))
                 avg_stats["K"] += float(props.get("K", 0))
                 avg_stats["ph"] += float(props.get("ph", 0))
-                avg_stats["temp"] += float(props.get("temp", 0))
                 avg_stats["humidity"] += float(props.get("humidity", 0))
-                avg_stats["rainfall"] += float(props.get("rainfall", 0))
-                valid_count += 1
-                
-        if valid_count > 0:
-            for key in avg_stats:
-                avg_stats[key] /= valid_count
-        else:
-            return {"error": "Zero Result", "message": "Tidak ada sinyal Landsat divalidasi pada ke-10 titik tersebut."}
+                valid_optical += 1
 
-        # 6. Simpan ke Supabase (satellite_results)
+        if valid_optical > 0:
+            for key in ["N", "P", "K", "ph", "humidity"]:
+                avg_stats[key] /= valid_optical
+        else:
+            return {"error": "Zero Result", "message": "Tidak ada sinyal Sentinel-2 yang valid pada ke-10 titik tersebut."}
+
+        # -- Suhu dari Landsat-8 L2 --
+        temp_features = temp_stats.get("features", [])
+        valid_temp = 0
+        for feat in temp_features:
+            props = feat.get("properties", {})
+            if props.get("temp") is not None:
+                avg_stats["temp"] += float(props.get("temp", 0))
+                valid_temp += 1
+        if valid_temp > 0:
+            avg_stats["temp"] /= valid_temp
+        else:
+            logger.warning("Tidak ada data suhu Landsat L2 — temp di-set ke 0.")
+
+        # -- Curah hujan dari CHIRPS --
+        rain_features = rain_stats.get("features", [])
+        valid_rain = 0
+        for feat in rain_features:
+            props = feat.get("properties", {})
+            if props.get("rainfall") is not None:
+                avg_stats["rainfall"] += float(props.get("rainfall", 0))
+                valid_rain += 1
+        if valid_rain > 0:
+            avg_stats["rainfall"] /= valid_rain
+
+        # 7. Simpan ke Supabase (satellite_results)
         payload = {
             "lahan_id": lahan_id,
             "longitude": lon,  # Pusat klik pertama 
