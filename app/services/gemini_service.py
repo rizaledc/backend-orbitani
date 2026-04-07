@@ -1,8 +1,8 @@
 """
 gemini_service.py
 Dual-model Gemini AI service for Orbitani.
-  - model_deep  : gemini-2.5-flash             → deep agronomist analysis (analyze-lahan)
-  - model_fast  : gemini-flash-lite-latest → quick chat / Q&A (ask)
+  - model_deep  : gemini-3-flash-preview          → deep agronomist analysis (analyze-lahan)
+  - model_fast  : gemini-3.1-flash-lite-preview    → quick chat / Q&A (ask)
 
 SDK: google-genai (baru) — menggunakan `from google import genai`
 """
@@ -15,6 +15,12 @@ logger = logging.getLogger(__name__)
 
 # Strip whitespace — Azure env vars kadang mengandung spasi/newline tersembunyi
 GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip() or None
+
+# ---------------------------------------------------------------------------
+# Model Constants
+# ---------------------------------------------------------------------------
+MODEL_FAST = "gemini-3.1-flash-lite-preview"
+MODEL_DEEP = "gemini-3-flash-preview"
 
 # ---------------------------------------------------------------------------
 # System Instruction (shared by both models)
@@ -59,17 +65,17 @@ else:
 
 
 # ---------------------------------------------------------------------------
-# Fast Chat — gemini-flash-lite-latest
+# Fast Chat — gemini-3.1-flash-lite-preview
 # ---------------------------------------------------------------------------
 async def ask_fast(prompt: str) -> str:
-    """Prompt ke gemini-flash-lite-latest — untuk konsultasi chat cepat."""
+    """Prompt ke gemini-3.1-flash-lite-preview — untuk konsultasi chat cepat."""
     if not client:
         logger.warning("ask_fast called but client is None (no API key).")
         return "Sistem AI saat ini tidak aktif (GEMINI_API_KEY tidak ditemukan)."
     try:
-        logger.info("Calling gemini-flash-lite-latest...")
+        logger.info("Calling %s...", MODEL_FAST)
         response = client.models.generate_content(
-            model="gemini-flash-lite-latest",
+            model=MODEL_FAST,
             contents=prompt,
             config={
                 "system_instruction": SYSTEM_INSTRUCTION,
@@ -84,16 +90,16 @@ async def ask_fast(prompt: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Deep Analysis — gemini-2.5-flash
+# Deep Analysis — gemini-3-flash-preview
 # ---------------------------------------------------------------------------
 async def ask_deep(prompt: str) -> str:
-    """Prompt ke gemini-2.5-flash — untuk analisis lahan mendalam."""
+    """Prompt ke gemini-3-flash-preview — untuk analisis lahan mendalam."""
     if not client:
         return "Sistem AI saat ini tidak aktif (GEMINI_API_KEY tidak ditemukan)."
     try:
-        logger.info("Calling gemini-2.5-flash...")
+        logger.info("Calling %s...", MODEL_DEEP)
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL_DEEP,
             contents=prompt,
             config={
                 "system_instruction": SYSTEM_INSTRUCTION,
