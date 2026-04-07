@@ -203,14 +203,53 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
         tci = landsat_l2.select("ST_B10").multiply(0.00341802).add(149.0).subtract(273.15).rename("temp")
 
         # =====================================================================
-        # 4. CHIRPS Rainfall
+        # 4. HYBRID RAINFALL (CHIRPS Primary, GPM Fallback)
         # =====================================================================
+        # Coba CHIRPS (mm/day)
         chirps = (
             ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
             .filterDate(date_start_str, date_end_str)
             .filterBounds(roi_geom)
-            .select("precipitation").sum().rename("rainfall")
+            .select("precipitation").sum()
         )
+        
+        rain_dict_chirps = chirps.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=roi_geom.centroid().buffer(5000),
+            scale=5000,
+            maxPixels=1e9
+        ).getInfo()
+        
+        rainfall_val = rain_dict_chirps.get("precipitation")
+        
+        # Jika CHIRPS null atau 0 (karena latency dataset)
+        if rainfall_val is None or float(rainfall_val) < 100:
+            logger.warning("CHIRPS data unavailable/incomplete. Falling back to GPM IMERG V07...")
+            
+            # GPM IMERG V07 (mm/hr, tiap 30 menit)
+            gpm = (
+                ee.ImageCollection("NASA/GPM_L3/IMERG_V07")
+                .filterDate(date_start_str, date_end_str)
+                .filterBounds(roi_geom)
+                .select("precipitation")
+            )
+            
+            # Trik efisiensi: Cari rata-rata mm/jam setahun, lalu kalikan 24 jam * 365 hari
+            gpm_annual = gpm.mean().multiply(24).multiply(365)
+            
+            rain_dict_gpm = gpm_annual.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=roi_geom.centroid().buffer(11000),  # Resolusi GPM ~11km
+                scale=11132,
+                maxPixels=1e9
+            ).getInfo()
+            
+            rainfall_val = rain_dict_gpm.get("precipitation")
+            
+            # Jika GPM juga masih gagal, baru pakai hard fallback
+            if rainfall_val is None or float(rainfall_val) < 100:
+                rainfall_val = 3500.0
+                logger.warning("GPM also failed. Using hard fallback 3500 mm.")
 
         # =====================================================================
         # 5. Reduce Regions — Sentinel-2 @10m, Landsat thermal @30m
@@ -227,14 +266,6 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
             collection=points_fc,
             reducer=ee.Reducer.mean(),
             scale=30
-        ).getInfo()
-
-        # Reduce curah hujan (CHIRPS) — buffer 5km dari centroid agar pasti menangkap piksel
-        rain_dict = chirps.reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=roi_geom.centroid().buffer(5000),
-            scale=5000,
-            maxPixels=1e9
         ).getInfo()
 
         # =====================================================================
@@ -275,14 +306,8 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
             avg_stats["temp"] = 26.5  # Fallback Suhu Rata-rata Bogor
             logger.warning("Landsat gagal, pakai suhu fallback 26.5 C")
 
-        # -- Curah hujan dari CHIRPS (reduceRegion pada polygon) --
-        rainfall_val = rain_dict.get("rainfall")
-        avg_stats["rainfall"] = float(rainfall_val) if rainfall_val is not None else 0.0
-
-        # Fallback: jika curah hujan masih 0 atau terlalu rendah, gunakan rata-rata Bogor
-        if avg_stats["rainfall"] == 0.0 or avg_stats["rainfall"] < 100:
-            avg_stats["rainfall"] = 3500.0  # Fallback Curah Hujan Bogor ~3500 mm/tahun
-            logger.warning("CHIRPS gagal/terlalu rendah, pakai curah hujan fallback 3500 mm")
+        # -- Curah hujan (sudah dihitung di blok Hybrid Rainfall) --
+        avg_stats["rainfall"] = float(rainfall_val)
 
         # 7. Prediksi ML (Random Forest) sebelum menyimpan ke database
         ml_recommendation = "Pending Analysis"
