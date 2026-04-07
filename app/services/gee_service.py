@@ -196,7 +196,7 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
             ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
             .filterDate(date_start_str, date_end_str)
             .filterBounds(roi_geom)
-            .filter(ee.Filter.lt("CLOUD_COVER", 80))  # Dilonggarkan, .median() buang noise
+            # TANPA filter CLOUD_COVER — .median() yang handle noise awan
             .median()
         )
         # Kalibrasi Suhu C2 L2 (ST_B10 scale: 0.00341802, offset: 149.0). Konversi Kelvin -> Celcius.
@@ -229,11 +229,12 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
             scale=30
         ).getInfo()
 
-        # Reduce curah hujan (CHIRPS) pada keseluruhan polygon (piksel 5km terlalu besar untuk points)
+        # Reduce curah hujan (CHIRPS) — buffer 5km dari centroid agar pasti menangkap piksel
         rain_dict = chirps.reduceRegion(
             reducer=ee.Reducer.mean(),
-            geometry=roi_geom,
-            scale=5000
+            geometry=roi_geom.centroid().buffer(5000),
+            scale=5000,
+            maxPixels=1e9
         ).getInfo()
 
         # =====================================================================
