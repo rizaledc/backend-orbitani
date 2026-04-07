@@ -34,43 +34,29 @@ _gee_ready = False
 
 def _init_gee() -> None:
     """
-    Inisialisasi koneksi ke GEE menggunakan Service Account.
-
-    Urutan prioritas kredensial:
-      1. File  : gee-key.json (untuk dev/local)
-      2. EnvVar: GEE_JSON_KEY (string JSON, untuk Vercel / cloud deployment)
+    Inisialisasi koneksi ke GEE menggunakan Service Account via Environment Variables (Azure).
     """
     global _gee_ready
     try:
-        if os.path.exists(GEE_KEY_PATH):
-            # --- Prioritas 1: File lokal ---
-            credentials = ee.ServiceAccountCredentials(
-                GEE_SERVICE_ACCOUNT, GEE_KEY_PATH
-            )
-            logger.info("GEE: menggunakan kredensial dari file gee-key.json")
+        sa_email = os.environ.get("GEE_SERVICE_ACCOUNT")
+        json_key_str = os.environ.get("GEE_JSON_KEY")
+        project = os.environ.get("GEE_PROJECT")
+
+        if sa_email and json_key_str:
+            key_dict = json.loads(json_key_str)
+            credentials = ee.ServiceAccountCredentials(sa_email, key_data=key_dict)
+            ee.Initialize(credentials=credentials, project=project)
+            logger.info("GEE berhasil diinisialisasi menggunakan credentials dari environment variables.")
         else:
-            # --- Prioritas 2: Environment variable (Vercel / cloud) ---
-            gee_json_str = os.getenv("GEE_JSON_KEY")
-            if not gee_json_str:
-                logger.warning(
-                    "gee-key.json tidak ditemukan dan GEE_JSON_KEY tidak di-set — GEE dinonaktifkan"
-                )
-                return
-
-            key_data = json.loads(gee_json_str)
-
-            # Buat objek Credentials langsung dari dict (tidak menulis ke disk)
-            credentials = ee.ServiceAccountCredentials(
-                GEE_SERVICE_ACCOUNT, key_data=key_data
-            )
-            logger.info("GEE: menggunakan kredensial dari env var GEE_JSON_KEY")
-
-        ee.Initialize(credentials=credentials, project=GEE_PROJECT)
+            # Fallback untuk lokal
+            ee.Initialize(project=project)
+            logger.info(f"GEE berhasil diinisialisasi (fallback lokal project={project}).")
+            
         _gee_ready = True
-        logger.info("GEE berhasil diinisialisasi (project=%s)", GEE_PROJECT)
 
     except Exception as e:
         logger.error("Gagal inisialisasi GEE: %s", e)
+        print(f"Gagal inisialisasi GEE: {e}")
 
 _init_gee()
 
