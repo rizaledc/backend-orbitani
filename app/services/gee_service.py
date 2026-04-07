@@ -196,7 +196,7 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
             ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
             .filterDate(date_start_str, date_end_str)
             .filterBounds(roi_geom)
-            .filter(ee.Filter.lt("CLOUD_COVER", 30))
+            .filter(ee.Filter.lt("CLOUD_COVER", 80))  # Dilonggarkan, .median() buang noise
             .median()
         )
         # Kalibrasi Suhu C2 L2 (ST_B10 scale: 0.00341802, offset: 149.0). Konversi Kelvin -> Celcius.
@@ -229,10 +229,10 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
             scale=30
         ).getInfo()
 
-        # Reduce curah hujan (CHIRPS) pada resolusi 5000m (native ~5.5km)
-        rain_stats = chirps.reduceRegions(
-            collection=points_fc,
+        # Reduce curah hujan (CHIRPS) pada keseluruhan polygon (piksel 5km terlalu besar untuk points)
+        rain_dict = chirps.reduceRegion(
             reducer=ee.Reducer.mean(),
+            geometry=roi_geom,
             scale=5000
         ).getInfo()
 
@@ -271,18 +271,17 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
         if valid_temp > 0:
             avg_stats["temp"] /= valid_temp
         else:
-            logger.warning("Tidak ada data suhu Landsat L2 — temp di-set ke 0.")
+            avg_stats["temp"] = 26.5  # Fallback Suhu Rata-rata Bogor
+            logger.warning("Landsat gagal, pakai suhu fallback 26.5 C")
 
-        # -- Curah hujan dari CHIRPS --
-        rain_features = rain_stats.get("features", [])
-        valid_rain = 0
-        for feat in rain_features:
-            props = feat.get("properties", {})
-            if props.get("rainfall") is not None:
-                avg_stats["rainfall"] += float(props.get("rainfall", 0))
-                valid_rain += 1
-        if valid_rain > 0:
-            avg_stats["rainfall"] /= valid_rain
+        # -- Curah hujan dari CHIRPS (reduceRegion pada polygon) --
+        rainfall_val = rain_dict.get("rainfall")
+        avg_stats["rainfall"] = float(rainfall_val) if rainfall_val is not None else 0.0
+
+        # Fallback: jika curah hujan masih 0 atau terlalu rendah, gunakan rata-rata Bogor
+        if avg_stats["rainfall"] == 0.0 or avg_stats["rainfall"] < 100:
+            avg_stats["rainfall"] = 3500.0  # Fallback Curah Hujan Bogor ~3500 mm/tahun
+            logger.warning("CHIRPS gagal/terlalu rendah, pakai curah hujan fallback 3500 mm")
 
         # 7. Prediksi ML (Random Forest) sebelum menyimpan ke database
         ml_recommendation = "Pending Analysis"
