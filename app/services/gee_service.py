@@ -29,7 +29,6 @@ LAHAN_HIBISC_COORDS = [
 ]
 
 import json
-import tempfile
 
 _gee_ready = False
 
@@ -37,32 +36,33 @@ def _init_gee():
     global _gee_ready
     try:
         project = os.environ.get("GEE_PROJECT")
-        json_str = os.environ.get("GEE_JSON_KEY")
+        json_input = os.environ.get("GEE_JSON_KEY")
         
-        if json_str and project:
-            # Bersihkan string dari ekstra kutip yang ditambahkan Azure
-            json_str = json_str.strip("'").strip('"')
-            
-            # Tulis ke temp file
-            fd, temp_path = tempfile.mkstemp(suffix=".json")
-            with os.fdopen(fd, 'w') as f:
-                f.write(json_str)
-                
-            # Paksa Google Auth menggunakan file tersebut
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
-            ee.Initialize(project=project)
-            logger.info("GEE Authenticated via Temp File!")
-        else:
-            if project:
-                ee.Initialize(project=project)
-                logger.info("GEE Authenticated via Local Fallback.")
+        if json_input and project:
+            # 1. Konversi input ke DICTIONARY (Handle string vs dict)
+            if isinstance(json_input, str):
+                # Bersihkan kotoran tanda kutip Azure jika ada
+                json_input = json_input.strip("'").strip('"')
+                info = json.loads(json_input)
             else:
-                logger.warning("GEE_PROJECT not found, skipping initialization.")
-                return
+                info = json_input
+            
+            # 2. Autentikasi Eksplisit (Tanpa File Sementara)
+            credentials = ee.ServiceAccountCredentials(
+                info['client_email'], 
+                key_data=json.dumps(info)
+            )
+            
+            ee.Initialize(credentials=credentials, project=project)
+            logger.info("GEE Authenticated successfully via Service Account Credentials!")
+        else:
+            # Fallback untuk testing lokal
+            ee.Initialize(project=project)
+            logger.info("GEE Initialized via Local Fallback.")
+            
         _gee_ready = True
     except Exception as e:
         logger.error(f"GAGAL LOGIN GEE: {str(e)}")
-        raise RuntimeError(f"GAGAL LOGIN GEE: {str(e)}")
 
 _init_gee()
 
