@@ -15,7 +15,6 @@ GEE_KEY_PATH = os.path.join(BASE_DIR, "gee-key.json")
 GEE_SERVICE_ACCOUNT = "orbitani-gee@studycilacap.iam.gserviceaccount.com"
 GEE_PROJECT = "studycilacap"
 
-# Poligon Lahan Hibisc (Cilacap, Jawa Tengah) - Format: [Longitude, Latitude]
 LAHAN_HIBISC_COORDS = [
     [106.975437, -6.701583], [106.975469, -6.701945], [106.975167, -6.702229],
     [106.975197, -6.702509], [106.976689, -6.703712], [106.977246, -6.704102],
@@ -285,11 +284,32 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
         if valid_rain > 0:
             avg_stats["rainfall"] /= valid_rain
 
-        # 7. Simpan ke Supabase (satellite_results)
+        # 7. Prediksi ML (Random Forest) sebelum menyimpan ke database
+        ml_recommendation = "Pending Analysis"
+        calibrated_data = None
+        try:
+            from app.services.ml_service import predict
+            ml_input = {
+                "N": avg_stats["N"],
+                "P": avg_stats["P"],
+                "K": avg_stats["K"],
+                "temperature": avg_stats["temp"],
+                "humidity": avg_stats["humidity"],
+                "ph": avg_stats["ph"],
+                "rainfall": avg_stats["rainfall"],
+            }
+            ml_result = predict(ml_input)
+            ml_recommendation = ml_result["recommendation"]
+            calibrated_data = ml_result["calibrated_data"]
+            logger.info("ML Prediction berhasil: %s", ml_recommendation)
+        except Exception as ml_err:
+            logger.warning("ML Prediction gagal (fallback Pending): %s", ml_err)
+
+        # 8. Simpan ke Supabase (satellite_results) dengan rekomendasi ML
         payload = {
             "lahan_id": lahan_id,
-            "longitude": lon,  # Pusat klik pertama 
-            "latitude": lat,   # Pusat klik pertama
+            "longitude": lon,
+            "latitude": lat,
             "n_value": float(avg_stats["N"]),
             "p_value": float(avg_stats["P"]),
             "k_value": float(avg_stats["K"]),
@@ -297,12 +317,17 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
             "temperature": float(avg_stats["temp"]),
             "humidity": float(avg_stats["humidity"]),
             "rainfall": float(avg_stats["rainfall"]),
-            "recommendation": "Pending Analysis",
+            "recommendation": ml_recommendation,
             "extracted_at": datetime.utcnow().isoformat()
         }
 
         res = db.table("satellite_results").insert(payload).execute()
-        return {"status": "success", "data": res.data}
+        return {
+            "status": "success",
+            "data": res.data,
+            "ml_recommendation": ml_recommendation,
+            "calibrated_data": calibrated_data,
+        }
 
     except Exception as e:
         logger.error("Error GEE Point processing: %s", e)

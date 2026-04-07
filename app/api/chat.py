@@ -145,7 +145,10 @@ async def analyze_lahan_api(
 
     sat_data = fresh_result.data[0]
 
-    # 5. Susun prompt agronomis dengan data satelit FRESH
+    # 5. Ambil rekomendasi ML yang sudah disimpan oleh gee_service
+    ml_recommendation = sat_data.get("recommendation", "Pending Analysis")
+
+    # 6. Susun prompt agronomis dengan data satelit FRESH + prediksi ML
     prompt = f"""Tolong berikan Orbitani Smart Analysis untuk data lahan satelit TERBARU ini:
 
 Sumber Data: Sentinel-2 SR Harmonized (10m) + Landsat-9 L2 TIRS-2 (30m)
@@ -159,17 +162,22 @@ Waktu Ekstraksi: {sat_data.get('extracted_at', 'N/A')}
 - Kelembapan (NDTI) : {sat_data.get('humidity', 'N/A')}
 - Curah Hujan (1th) : {sat_data.get('rainfall', 'N/A')} mm
 
-Berikan 2 poin aksi yang harus segera dilakukan petani untuk memaksimalkan hasil panen Kenaf."""
+Model Random Forest kami merekomendasikan tanaman: **{ml_recommendation}**.
+
+Berikan analisis lanjutan berdasarkan rekomendasi ini:
+1. Apakah rekomendasi tanaman tersebut sesuai dengan kondisi hara dan iklim di atas?
+2. Berikan 2 poin aksi yang harus segera dilakukan petani untuk memaksimalkan hasil panen."""
 
     logger.info(
-        "User '%s' sending fresh satellite data to %s for lahan_id=%d",
-        current_user["username"], MODEL_DEEP, req.lahan_id,
+        "User '%s' sending fresh satellite data + ML prediction (%s) to %s for lahan_id=%d",
+        current_user["username"], ml_recommendation, MODEL_DEEP, req.lahan_id,
     )
     answer = await ask_deep(prompt)
 
     return {
         "status": "success",
         "model": MODEL_DEEP,
+        "ml_recommendation": ml_recommendation,
         "satellite_data": sat_data,
         "ai_analysis": answer,
     }
