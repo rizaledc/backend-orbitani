@@ -62,7 +62,7 @@ def get_current_user(
     except jwt.PyJWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token tidak valid")
 
-    result = db.table("users").select("id, username, role").eq("username", username).execute()
+    result = db.table("users").select("id, username, role, organization_id").eq("username", username).execute()
     if not result.data:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User tidak ditemukan")
     return result.data[0]

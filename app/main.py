@@ -17,6 +17,8 @@ from app.api.chat import router as chat_router
 from app.api.chat_live import router as chat_live_router
 from app.api.lahan import router as lahan_router
 from app.api.history import router as history_router
+from app.api.organizations import router as org_router
+from app.api.admin import router as admin_router
 
 logger = logging.getLogger(__name__)
 
@@ -77,13 +79,15 @@ app.add_middleware(
 # ---------------------------------------------------------------
 # 3. Mendaftarkan semua Router
 # ---------------------------------------------------------------
-app.include_router(predict_router, prefix="/api", tags=["Machine Learning"])
-app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"])
-app.include_router(users_router, prefix="/api/users", tags=["User Management"])
-app.include_router(chat_router, prefix="/api/chat", tags=["AI Agronomist"])
-app.include_router(chat_live_router, prefix="/api/chat-live", tags=["Live Chat Human"])
-app.include_router(lahan_router, prefix="/api/lahan", tags=["WebGIS Lahan"])
-app.include_router(history_router, prefix="/api/history", tags=["History Ledger"])
+app.include_router(predict_router,  prefix="/api",               tags=["Machine Learning"])
+app.include_router(auth_router,     prefix="/api/auth",            tags=["Authentication"])
+app.include_router(users_router,    prefix="/api/users",           tags=["User Management"])
+app.include_router(chat_router,     prefix="/api/chat",            tags=["AI Agronomist"])
+app.include_router(chat_live_router,prefix="/api/chat-live",       tags=["Live Chat Human"])
+app.include_router(lahan_router,    prefix="/api/lahan",           tags=["WebGIS Lahan"])
+app.include_router(history_router,  prefix="/api/history",         tags=["History Ledger"])
+app.include_router(org_router,      prefix="/api/organizations",   tags=["Organizations"])
+app.include_router(admin_router,    prefix="/api/admin",           tags=["Admin MLOps"])
 
 # ---------------------------------------------------------------
 # 4. Endpoint Halaman Depan

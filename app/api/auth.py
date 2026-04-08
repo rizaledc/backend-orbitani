@@ -24,13 +24,14 @@ def register(data: UserCreate, db: Client = Depends(get_supabase)):
             detail=f"Username '{data.username}' sudah terdaftar",
         )
 
-    # Buat user baru (sertakan nama & email jika ada)
+    # Buat user baru (sertakan nama, email, dan organization_id jika ada)
     new_user = db.table("users").insert({
-        "username": data.username,
-        "password_hash": hash_password(data.password),
-        "role": "user",
-        "name": data.name,
-        "email": data.email
+        "username":        data.username,
+        "password_hash":   hash_password(data.password),
+        "role":            "user",
+        "name":            data.name,
+        "email":           data.email,
+        "organization_id": data.organization_id,
     }).execute()
 
     user = new_user.data[0]
