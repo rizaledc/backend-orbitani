@@ -190,17 +190,65 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
         optical_composite = n_index.addBands([p_index, k_index, ph_index, ndti])
 
         # =====================================================================
-        # 3.5. Landsat-9 L2 (Surface Temperature ONLY) — Resolusi 30m
+        # 3.5 HYBRID TEMPERATURE (Landsat 8+9 Primary, MODIS Fallback)
         # =====================================================================
-        landsat_l2 = (
-            ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
-            .filterDate(date_start_str, date_end_str)
-            .filterBounds(roi_geom)
-            # TANPA filter CLOUD_COVER — .median() yang handle noise awan
-            .median()
-        )
-        # Kalibrasi Suhu C2 L2 (ST_B10 scale: 0.00341802, offset: 149.0). Konversi Kelvin -> Celcius.
-        tci = landsat_l2.select("ST_B10").multiply(0.00341802).add(149.0).subtract(273.15).rename("temp")
+        
+        # 1. Kumpulkan Landsat 8 dan 9 (Resolusi 30m), filter awan KETAT (< 50%)
+        l8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2") \
+               .filterDate(date_start_str, date_end_str) \
+               .filterBounds(roi_geom) \
+               .filter(ee.Filter.lt("CLOUD_COVER", 50))
+               
+        l9 = ee.ImageCollection("LANDSAT/LC09/C02/T1_L2") \
+               .filterDate(date_start_str, date_end_str) \
+               .filterBounds(roi_geom) \
+               .filter(ee.Filter.lt("CLOUD_COVER", 50))
+        
+        # Gabungkan koleksi dan ambil median
+        landsat_combined = l8.merge(l9).median()
+        
+        # Konversi Landsat L2 ke Celcius: (ST_B10 * 0.00341802 + 149.0) - 273.15
+        tci_landsat = landsat_combined.select("ST_B10").multiply(0.00341802).add(149.0).subtract(273.15)
+        
+        # Tarik nilai Landsat dengan buffer 30 meter
+        temp_dict_landsat = tci_landsat.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=roi_geom.centroid().buffer(30),
+            scale=30,
+            maxPixels=1e9
+        ).getInfo()
+        
+        temp_val = temp_dict_landsat.get("ST_B10")
+        
+        # 2. JIKA LANDSAT GAGAL (Null karena awan > 50%), FALLBACK KE MODIS
+        if temp_val is None:
+            logger.warning("Landsat 8 & 9 (Cloud < 50%%) kosong. Fallback ke MODIS Terra...")
+            
+            # MODIS Terra (MOD11A1.061) LST Daily (Resolusi 1km)
+            modis = (
+                ee.ImageCollection("MODIS/061/MOD11A1")
+                .filterDate(date_start_str, date_end_str)
+                .filterBounds(roi_geom)
+                .median()
+            )
+            
+            # Konversi MODIS LST_Day_1km ke Celcius: (LST_Day_1km * 0.02) - 273.15
+            modis_temp = modis.select("LST_Day_1km").multiply(0.02).subtract(273.15)
+            
+            # Tarik nilai MODIS dengan buffer 1000 meter (1km)
+            temp_dict_modis = modis_temp.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=roi_geom.centroid().buffer(1000),
+                scale=1000,
+                maxPixels=1e9
+            ).getInfo()
+            
+            temp_val = temp_dict_modis.get("LST_Day_1km")
+            
+            # 3. HARD FALLBACK (Jaring Pengaman Terakhir)
+            if temp_val is None:
+                temp_val = 26.5
+                logger.warning("MODIS juga gagal. Menggunakan suhu fallback rata-rata 26.5 C")
 
         # =====================================================================
         # 4. HYBRID RAINFALL (CHIRPS Primary, GPM Fallback)
@@ -252,7 +300,7 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
                 logger.warning("GPM also failed. Using hard fallback 3500 mm.")
 
         # =====================================================================
-        # 5. Reduce Regions — Sentinel-2 @10m, Landsat thermal @30m
+        # 5. Reduce Regions — Sentinel-2 @10m
         # =====================================================================
         # Reduce optik (Sentinel-2) pada resolusi 10m
         optical_stats = optical_composite.reduceRegions(
@@ -261,12 +309,7 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
             scale=10
         ).getInfo()
 
-        # Reduce suhu (Landsat L2) pada resolusi 30m
-        temp_stats = tci.reduceRegions(
-            collection=points_fc,
-            reducer=ee.Reducer.mean(),
-            scale=30
-        ).getInfo()
+        # (Suhu sudah dihitung di blok Hybrid Temperature di atas)
 
         # =====================================================================
         # 6. Rata-ratakan 10 titik → 1 konklusi
@@ -292,19 +335,8 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
         else:
             return {"error": "Zero Result", "message": "Tidak ada sinyal Sentinel-2 yang valid pada ke-10 titik tersebut."}
 
-        # -- Suhu dari Landsat-9 L2 --
-        temp_features = temp_stats.get("features", [])
-        valid_temp = 0
-        for feat in temp_features:
-            props = feat.get("properties", {})
-            if props.get("temp") is not None:
-                avg_stats["temp"] += float(props.get("temp", 0))
-                valid_temp += 1
-        if valid_temp > 0:
-            avg_stats["temp"] /= valid_temp
-        else:
-            avg_stats["temp"] = 26.5  # Fallback Suhu Rata-rata Bogor
-            logger.warning("Landsat gagal, pakai suhu fallback 26.5 C")
+        # -- Suhu (sudah dihitung di blok Hybrid Temperature L8+L9+MODIS) --
+        avg_stats["temp"] = float(temp_val)
 
         # -- Curah hujan (sudah dihitung di blok Hybrid Rainfall) --
         avg_stats["rainfall"] = float(rainfall_val)
