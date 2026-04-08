@@ -2,19 +2,23 @@
 chat.py
 AI Agronomist endpoints for Orbitani.
 
-Dual-Model Strategy:
-  POST /ask            → gemini-2.5-flash (fast, ~2-3s)  — Q&A chat
-  POST /analyze-lahan  → gemini-2.5-flash (deep, ~15-20s)      — satellite analysis
+Model: gemini-3.1-flash-lite (Round-Robin + BYOK)
+
+Endpoints:
+  POST /ask            → quick Q&A chat
+  POST /analyze-lahan  → satellite sync + ML prediction + deep AI analysis
 
 Flow analyze-lahan:
   1. Ambil koordinat lahan dari DB
-  2. Trigger GEE Hybrid (Sentinel-2 + Landsat-9) → simpan data fresh ke DB
-  3. Kirim data fresh ke Gemini 2.5 Flash untuk analisis mendalam
+  2. Trigger GEE Hybrid (Sentinel-2 + Landsat-8/9 + MODIS) → simpan data fresh ke DB
+  3. ML Random Forest prediction → simpan rekomendasi ke DB
+  4. Kirim data + prediksi ML ke Gemini 3.1 Flash Lite untuk analisis mendalam
 
 Rate Limiting:
   Role 'user' : 5 RPM  |  Role 'admin'/'superadmin' : unlimited
 """
 import logging
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from supabase import Client
@@ -30,14 +34,16 @@ router = APIRouter()
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=1000)
+    user_api_key: Optional[str] = None  # BYOK: Bring Your Own Key
 
 
 class AnalyzeLahanRequest(BaseModel):
     lahan_id: int
+    user_api_key: Optional[str] = None  # BYOK: Bring Your Own Key
 
 
 # ---------------------------------------------------------------
-# POST /ask — Quick Q&A (gemini-2.5-flash)
+# POST /ask — Quick Q&A (gemini-3.1-flash-lite)
 # ---------------------------------------------------------------
 @router.post("/ask")
 async def ask_agronomist_api(
@@ -46,18 +52,19 @@ async def ask_agronomist_api(
 ):
     """
     Konsultasi tanya jawab bebas dengan AI Agronomist.
-    Menggunakan gemini-2.5-flash untuk respons cepat (~2-3 detik).
+    Menggunakan gemini-3.1-flash-lite dengan Round-Robin key pool.
+    Mendukung BYOK (user_api_key opsional).
     Rate limit: 5 RPM untuk role 'user'.
     """
     check_rate_limit(current_user)
 
     logger.info("User '%s' asking fast AI: %s...", current_user["username"], req.message[:60])
-    answer = await ask_fast(req.message)
+    answer = await ask_fast(req.message, user_api_key=req.user_api_key)
     return {"status": "success", "model": MODEL_FAST, "answer": answer}
 
 
 # ---------------------------------------------------------------
-# POST /analyze-lahan — Deep Analysis (gemini-2.5-flash)
+# POST /analyze-lahan — Deep Analysis (gemini-3.1-flash-lite)
 # ---------------------------------------------------------------
 @router.post("/analyze-lahan")
 async def analyze_lahan_api(
@@ -67,13 +74,14 @@ async def analyze_lahan_api(
 ):
     """
     Menganalisis lahan menggunakan data satelit FRESH dari GEE Hybrid
-    (Sentinel-2 + Landsat-9) lalu dilempar ke Gemini 2.5 Flash.
+    lalu dilempar ke Gemini 3.1 Flash Lite.
+    Mendukung BYOK (user_api_key opsional).
 
     Flow:
       1. Ambil koordinat centroid lahan dari tabel lahan.
-      2. Trigger sinkronisasi GEE (Sentinel-2 optik + Landsat-9 termal).
-      3. Data fresh disimpan ke DB oleh gee_service.
-      4. Data fresh tersebut dikirim ke Gemini 2.5 Flash untuk analisis.
+      2. Trigger sinkronisasi GEE (Sentinel-2 + Landsat-8/9 + MODIS).
+      3. ML Random Forest prediction → simpan ke DB.
+      4. Data fresh dikirim ke Gemini 3.1 Flash Lite untuk analisis.
 
     Rate limit: 5 RPM untuk role 'user'.
     """
@@ -107,7 +115,7 @@ async def analyze_lahan_api(
         current_user["username"], req.lahan_id, avg_lat, avg_lon,
     )
 
-    # 3. Trigger sinkronisasi GEE Hybrid (Sentinel-2 + Landsat-9) → data disimpan ke DB
+    # 3. Trigger sinkronisasi GEE Hybrid → data + ML prediction disimpan ke DB
     try:
         from app.services.gee_service import process_point_satellite_data
 
@@ -151,7 +159,7 @@ async def analyze_lahan_api(
     # 6. Susun prompt agronomis dengan data satelit FRESH + prediksi ML
     prompt = f"""Tolong berikan Orbitani Smart Analysis untuk data lahan satelit TERBARU ini:
 
-Sumber Data: Sentinel-2 SR Harmonized (10m) + Landsat-9 L2 TIRS-2 (30m)
+Sumber Data: Sentinel-2 SR Harmonized (10m) + Landsat-8/9 L2 (30m) + MODIS Terra (1km fallback)
 Waktu Ekstraksi: {sat_data.get('extracted_at', 'N/A')}
 
 - Nitrogen (N)      : {sat_data.get('n_value', 'N/A')}
@@ -172,7 +180,7 @@ Berikan analisis lanjutan berdasarkan rekomendasi ini:
         "User '%s' sending fresh satellite data + ML prediction (%s) to %s for lahan_id=%d",
         current_user["username"], ml_recommendation, MODEL_DEEP, req.lahan_id,
     )
-    answer = await ask_deep(prompt)
+    answer = await ask_deep(prompt, user_api_key=req.user_api_key)
 
     return {
         "status": "success",
