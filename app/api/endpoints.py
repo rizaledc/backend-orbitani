@@ -92,3 +92,23 @@ def predict_crop(data: dict):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/llm-status", tags=["Admin"])
+async def get_llm_status():
+    """Mengembalikan status Round-Robin pooling API Key Gemini."""
+    # Ambil dari gemini_service.py
+    from app.services.gemini_service import _rr_index, GEMINI_FALLBACK_KEYS
+    
+    # Masking key demi keamanan (tampilkan 8 huruf pertama saja)
+    masked_keys = [f"{k[:8]}...***" for k in GEMINI_FALLBACK_KEYS]
+    
+    current_active = masked_keys[_rr_index] if masked_keys else None
+
+    return {
+        "status": "success",
+        "active_index": _rr_index,
+        "total_keys_in_pool": len(GEMINI_FALLBACK_KEYS),
+        "pool_keys": masked_keys,
+        "current_active_key": current_active
+    }
