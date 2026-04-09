@@ -10,6 +10,13 @@ on:
       - main
   workflow_dispatch:
 
+# ✅ FIX 409 CONFLICT: Batalkan deployment lama jika ada push baru masuk.
+# Ini mencegah dua proses deployment berjalan bersamaan ke Azure,
+# yang merupakan penyebab utama error "Conflict (CODE: 409)".
+concurrency:
+  group: azure-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -50,6 +57,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build
+    environment:
+      name: 'Production'
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
     
     steps:
       - name: Download artifact from build job
