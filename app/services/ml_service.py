@@ -14,6 +14,12 @@ import os
 import joblib
 import numpy as np
 import pandas as pd
+import warnings
+import sklearn.ensemble
+import sklearn.preprocessing
+
+# Suppress sklearn InconsistentVersionWarning that pollutes logs due to 1.6 vs 1.8 mismatch
+warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
 logger = logging.getLogger(__name__)
 
