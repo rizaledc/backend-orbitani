@@ -78,13 +78,23 @@ def sync_satellite(lahan_id: int, lat: float, lon: float):
 def predict_crop(data: dict):
     """
     Prediksi manual dari input user.
+    Mendukung payload huruf kecil (n, p, k) maupun huruf besar (N, P, K).
     Model .pkl dimuat LAZY di dalam fungsi ini → prediksi → RAM dibersihkan.
     """
     try:
-        # Lazy import — ml_service.predict() akan load → predict → del → gc.collect()
-        from app.services.ml_service import predict
+        # Normalise case-sensitivity: frontend pakai n/p/k, model pakai N/P/K
+        normalised = {
+            "N":           float(data.get("N") or data.get("n", 0)),
+            "P":           float(data.get("P") or data.get("p", 0)),
+            "K":           float(data.get("K") or data.get("k", 0)),
+            "temperature": float(data.get("temperature", 0)),
+            "humidity":    float(data.get("humidity", 0)),
+            "ph":          float(data.get("ph", 0)),
+            "rainfall":    float(data.get("rainfall", 0)),
+        }
 
-        result = predict(data)
+        from app.services.ml_service import predict
+        result = predict(normalised)
         return {
             "status": "success",
             "recommendation": result["recommendation"],
