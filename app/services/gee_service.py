@@ -390,7 +390,7 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
             "humidity": float(avg_stats["humidity"]),
             "rainfall": float(avg_stats["rainfall"]),
             "recommendation": ml_recommendation,
-            "extracted_at": datetime.utcnow().isoformat()
+            "created_at": datetime.utcnow().isoformat()
         }
 
         res = db.table("satellite_results").insert(payload).execute()
