@@ -96,9 +96,9 @@ def predict_crop(data: dict):
         from app.services.ml_service import predict
         result = predict(normalised)
         return {
-            "status": "success",
-            "recommendation": result["recommendation"],
-            "calibrated_data": result["calibrated_data"],
+            "status":            "success",
+            "ai_recommendation": result["ai_recommendation"],
+            "calibrated_data":   result["calibrated_data"],
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

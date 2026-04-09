@@ -97,14 +97,14 @@ def get_lahan_analytics(
         db.table("satellite_results")
         .select("*")
         .in_("lahan_id", lahan_ids)
-        .order("extracted_at")
+        .order("created_at")
         .execute()
     )
 
     from collections import defaultdict
     trends = defaultdict(list)
     for record in sat_res.data:
-        date_str = record.get("extracted_at", "")[:10] if record.get("extracted_at") else "Unknown"
+        date_str = record.get("created_at", "")[:10] if record.get("created_at") else "Unknown"
         if date_str != "Unknown":
             trends[date_str].append(record)
 
@@ -113,9 +113,9 @@ def get_lahan_analytics(
         count = len(records)
         data.append({
             "date":     date_str,
-            "nitrogen": round(sum(r.get("n_value") or 0 for r in records) / count, 2),
-            "fosfor":   round(sum(r.get("p_value") or 0 for r in records) / count, 2),
-            "kalium":   round(sum(r.get("k_value") or 0 for r in records) / count, 2),
+            "nitrogen": round(sum(r.get("n") or 0 for r in records) / count, 2),
+            "fosfor":   round(sum(r.get("p") or 0 for r in records) / count, 2),
+            "kalium":   round(sum(r.get("k") or 0 for r in records) / count, 2),
             "ph":       round(sum(r.get("ph") or 0 for r in records) / count, 2),
             "tci":      round(sum(r.get("temperature") or 0 for r in records) / count, 2),
             "ndti":     round(sum(r.get("humidity") or 0 for r in records) / count, 2),
@@ -166,7 +166,7 @@ def get_lahan_satellite_data(
         db.table("satellite_results")
         .select("*")
         .eq("lahan_id", lahan_id)
-        .order("extracted_at", desc=True)
+        .order("created_at", desc=True)
         .execute()
     )
     return {"status": "success", "lahan": lahan, "satellite_data": sat_data.data}

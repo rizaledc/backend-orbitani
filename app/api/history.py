@@ -28,19 +28,19 @@ def get_history(
         for record in res.data:
             lahan_data = record.get("lahan") or {}
             mapped_data.append({
-                "id":        record.get("id"),
-                "created_at": record.get("created_at"),
-                "longitude": record.get("longitude", 0.0),   # dari satellite_results
-                "latitude":  record.get("latitude", 0.0),    # dari satellite_results
-                "nitrogen":  record.get("n_value"),
-                "fosfor":    record.get("p_value"),
-                "kalium":    record.get("k_value"),
-                "ph":        record.get("ph"),
-                "tci":       record.get("temperature"),
-                "ndti":      record.get("humidity"),
-                "rainfall":  record.get("rainfall"),
-                "label":     record.get("recommendation"),
-                "lahan":     lahan_data,
+                "id":               record.get("id"),
+                "created_at":       record.get("created_at"),
+                "longitude":        record.get("longitude", 0.0),
+                "latitude":         record.get("latitude", 0.0),
+                "nitrogen":         record.get("n"),          # kolom: n
+                "fosfor":           record.get("p"),          # kolom: p
+                "kalium":           record.get("k"),          # kolom: k
+                "ph":               record.get("ph"),
+                "tci":              record.get("temperature"),
+                "ndti":             record.get("humidity"),
+                "rainfall":         record.get("rainfall"),
+                "label":            record.get("ai_recommendation"),  # kolom: ai_recommendation
+                "lahan":            lahan_data,
             })
 
         return {"data": mapped_data}

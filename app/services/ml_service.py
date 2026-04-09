@@ -76,8 +76,8 @@ def predict(input_data: dict) -> dict:
 
         logger.info("Prediksi selesai → %s", recommendation)
         return {
-            "calibrated_data": calibrated_data,
-            "recommendation": recommendation,
+            "calibrated_data":   calibrated_data,
+            "ai_recommendation": recommendation,  # Sesuai kolom DB: ai_recommendation
         }
 
     finally:

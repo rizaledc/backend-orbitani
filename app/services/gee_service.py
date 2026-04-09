@@ -357,7 +357,7 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
         avg_stats["rainfall"] = float(rainfall_val)
 
         # 7. Prediksi ML (Random Forest) sebelum menyimpan ke database
-        ml_recommendation = "Pending Analysis"
+        ai_recommendation = "Pending Analysis"
         calibrated_data = None
         try:
             from app.services.ml_service import predict
@@ -371,34 +371,34 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
                 "rainfall": avg_stats["rainfall"],
             }
             ml_result = predict(ml_input)
-            ml_recommendation = ml_result["recommendation"]
+            ai_recommendation = ml_result["ai_recommendation"]
             calibrated_data = ml_result["calibrated_data"]
-            logger.info("ML Prediction berhasil: %s", ml_recommendation)
+            logger.info("ML Prediction berhasil: %s", ai_recommendation)
         except Exception as ml_err:
             logger.warning("ML Prediction gagal (fallback Pending): %s", ml_err)
 
-        # 8. Simpan ke Supabase (satellite_results) dengan rekomendasi ML
+        # 8. Simpan ke Supabase (satellite_results) dengan skema kolom FINAL
         payload = {
-            "lahan_id": lahan_id,
-            "longitude": lon,
-            "latitude": lat,
-            "n_value": float(avg_stats["N"]),
-            "p_value": float(avg_stats["P"]),
-            "k_value": float(avg_stats["K"]),
-            "ph": float(avg_stats["ph"]),
-            "temperature": float(avg_stats["temp"]),
-            "humidity": float(avg_stats["humidity"]),
-            "rainfall": float(avg_stats["rainfall"]),
-            "recommendation": ml_recommendation,
-            "created_at": datetime.utcnow().isoformat()
+            "lahan_id":          lahan_id,
+            "longitude":         lon,
+            "latitude":          lat,
+            "n":                 float(avg_stats["N"]),
+            "p":                 float(avg_stats["P"]),
+            "k":                 float(avg_stats["K"]),
+            "ph":                float(avg_stats["ph"]),
+            "temperature":       float(avg_stats["temp"]),
+            "humidity":          float(avg_stats["humidity"]),
+            "rainfall":          float(avg_stats["rainfall"]),
+            "ai_recommendation": ai_recommendation,
+            "created_at":        datetime.utcnow().isoformat(),
         }
 
         res = db.table("satellite_results").insert(payload).execute()
         return {
             "status": "success",
             "data": res.data,
-            "ml_recommendation": ml_recommendation,
-            "calibrated_data": calibrated_data,
+            "ai_recommendation": ai_recommendation,
+            "calibrated_data":   calibrated_data,
         }
 
     except Exception as e:

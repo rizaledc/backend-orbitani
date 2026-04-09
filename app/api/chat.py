@@ -140,7 +140,7 @@ async def analyze_lahan_api(
         db.table("satellite_results")
         .select("*")
         .eq("lahan_id", req.lahan_id)
-        .order("extracted_at", desc=True)
+        .order("created_at", desc=True)
         .limit(1)
         .execute()
     )
@@ -154,17 +154,17 @@ async def analyze_lahan_api(
     sat_data = fresh_result.data[0]
 
     # 5. Ambil rekomendasi ML yang sudah disimpan oleh gee_service
-    ml_recommendation = sat_data.get("recommendation", "Pending Analysis")
+    ml_recommendation = sat_data.get("ai_recommendation", "Pending Analysis")
 
     # 6. Susun prompt agronomis dengan data satelit FRESH + prediksi ML
     prompt = f"""Tolong berikan Orbitani Smart Analysis untuk data lahan satelit TERBARU ini:
 
 Sumber Data: Sentinel-2 SR Harmonized (10m) + Landsat-8/9 L2 (30m) + MODIS Terra (1km fallback)
-Waktu Ekstraksi: {sat_data.get('extracted_at', 'N/A')}
+Waktu Ekstraksi: {sat_data.get('created_at', 'N/A')}
 
-- Nitrogen (N)      : {sat_data.get('n_value', 'N/A')}
-- Fosfor (P)        : {sat_data.get('p_value', 'N/A')}
-- Kalium (K)        : {sat_data.get('k_value', 'N/A')}
+- Nitrogen (N)      : {sat_data.get('n', 'N/A')}
+- Fosfor (P)        : {sat_data.get('p', 'N/A')}
+- Kalium (K)        : {sat_data.get('k', 'N/A')}
 - pH Tanah          : {sat_data.get('ph', 'N/A')}
 - Suhu Lahan        : {sat_data.get('temperature', 'N/A')} °C
 - Kelembapan (NDTI) : {sat_data.get('humidity', 'N/A')}
