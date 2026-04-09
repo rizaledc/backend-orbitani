@@ -20,9 +20,15 @@ from app.api.history import router as history_router
 from app.api.organizations import router as org_router
 from app.api.admin import router as admin_router
 
+# ---------------------------------------------------------------
+# Inisialisasi Logging Terstruktur
+# ---------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(module)-15s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 logger = logging.getLogger(__name__)
-
-
 # ---------------------------------------------------------------
 # Lifespan: startup & shutdown events
 # ---------------------------------------------------------------

@@ -56,8 +56,8 @@ def submit_feedback(
     }
     result = db.table("ml_feedback").insert(payload).execute()
     logger.info(
-        "ML Feedback diterima dari user '%s' untuk lahan_id=%d — actual_crop=%s",
-        current_user["username"], data.lahan_id, data.actual_crop,
+        "[METRIC_FEEDBACK_SUBMITTED] lahan_id=%d | username=%s | actual_crop=%s | ai_recommendation=%s",
+        data.lahan_id, current_user["username"], data.actual_crop, data.ai_recommendation,
     )
     return result.data[0]
 
@@ -92,7 +92,7 @@ async def trigger_retrain(
 
     background_tasks.add_task(retrain_model_full)
     logger.info(
-        "Superadmin '%s' memicu model retraining di background.",
+        "[METRIC_RETRAIN_TRIGGERED] username=%s | status=accepted",
         _current_user["username"],
     )
     return RetrainResponse(

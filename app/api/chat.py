@@ -111,8 +111,8 @@ async def analyze_lahan_api(
     avg_lat = sum(c[1] for c in coords) / len(coords)
 
     logger.info(
-        "User '%s' analyze-lahan: lahan_id=%d, triggering fresh GEE sync at [%.6f, %.6f]",
-        current_user["username"], req.lahan_id, avg_lat, avg_lon,
+        "[METRIC_ANALYZE_LAHAN] lahan_id=%d | username=%s | lat=%f | lon=%f",
+        req.lahan_id, current_user["username"], avg_lat, avg_lon,
     )
 
     # 3. Trigger sinkronisasi GEE Hybrid → data + ML prediction disimpan ke DB
@@ -177,8 +177,8 @@ Berikan analisis lanjutan berdasarkan rekomendasi ini:
 2. Berikan 2 poin aksi yang harus segera dilakukan petani untuk memaksimalkan hasil panen."""
 
     logger.info(
-        "User '%s' sending fresh satellite data + ML prediction (%s) to %s for lahan_id=%d",
-        current_user["username"], ml_recommendation, MODEL_DEEP, req.lahan_id,
+        "[METRIC_DEEP_ANALYSIS] lahan_id=%d | username=%s | recommendation=%s | model=%s",
+        req.lahan_id, current_user["username"], ml_recommendation, MODEL_DEEP,
     )
     answer = await ask_deep(prompt, user_api_key=req.user_api_key)
 

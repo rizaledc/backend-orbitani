@@ -47,12 +47,13 @@ async def analyze_location(
 
     # 2. Proses GEE & Simpan ke DB
     logger.info(
-        "User '%s' memulai analisis lokasi: Lahan %d pada [%f, %f]",
-        current_user.get("username"), req.lahan_id, req.latitude, req.longitude,
+        "[METRIC_ANALYZE_LOCATION] lahan_id=%d | username=%s | lat=%f | lon=%f",
+        req.lahan_id, current_user.get("username"), req.latitude, req.longitude,
     )
     result = process_point_satellite_data(req.lahan_id, req.latitude, req.longitude)
 
     if "error" in result:
+        logger.error("[METRIC_ANALYZE_FAIL] lahan_id=%d | reason=%s", req.lahan_id, result["message"])
         raise HTTPException(status_code=500, detail=result["message"])
 
     # Trigger Pengecekan Auto-Retrain di Background
