@@ -82,11 +82,11 @@ def predict_crop(data: dict):
     Model .pkl dimuat LAZY di dalam fungsi ini → prediksi → RAM dibersihkan.
     """
     try:
-        # Normalise case-sensitivity: frontend pakai n/p/k, model pakai N/P/K
+        # Mapping dictionary eksplisit agar payload (n, p, k) huruf kecil diubah ke N, P, K huruf besar
         normalised = {
-            "N":           float(data.get("N") or data.get("n", 0)),
-            "P":           float(data.get("P") or data.get("p", 0)),
-            "K":           float(data.get("K") or data.get("k", 0)),
+            "N":           float(data.get("N", data.get("n", 0))),
+            "P":           float(data.get("P", data.get("p", 0))),
+            "K":           float(data.get("K", data.get("k", 0))),
             "temperature": float(data.get("temperature", 0)),
             "humidity":    float(data.get("humidity", 0)),
             "ph":          float(data.get("ph", 0)),

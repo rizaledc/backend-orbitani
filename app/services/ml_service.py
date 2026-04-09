@@ -37,13 +37,13 @@ def calibrate_input(data: dict) -> dict:
     Fungsi ini RINGAN (hanya numpy interp), tidak memakan RAM signifikan.
     """
     return {
-        "N": float(np.interp(data["N"], [-15.0, -5.0], [0.0, 120.0])),
-        "P": float(np.interp(data["P"], [5.0, 6.0], [10.0, 80.0])),
-        "K": float(np.interp(data["K"], [60.0, 150.0], [20.0, 150.0])),
-        "temperature": float(np.interp(data["temperature"], [0.0, 100.0], [18.0, 28.0])),
-        "humidity": float(np.interp(data["humidity"], [0.002, 0.005], [65.0, 85.0])),
-        "ph": float(data["ph"]),
-        "rainfall": float(np.clip(data["rainfall"], a_min=0, a_max=290.0)),
+        "N": float(np.interp(data.get("N", data.get("n", 0)), [-15.0, -5.0], [0.0, 120.0])),
+        "P": float(np.interp(data.get("P", data.get("p", 0)), [5.0, 6.0], [10.0, 80.0])),
+        "K": float(np.interp(data.get("K", data.get("k", 0)), [60.0, 150.0], [20.0, 150.0])),
+        "temperature": float(np.interp(data.get("temperature", 0), [0.0, 100.0], [18.0, 28.0])),
+        "humidity": float(np.interp(data.get("humidity", 0), [0.002, 0.005], [65.0, 85.0])),
+        "ph": float(data.get("ph", 0)),
+        "rainfall": float(np.clip(data.get("rainfall", 0), a_min=0, a_max=290.0)),
     }
 
 

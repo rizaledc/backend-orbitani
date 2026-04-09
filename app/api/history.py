@@ -21,20 +21,7 @@ def get_history(
     """
     try:
         res = db.table("satellite_results").select(
-            "id",
-            "created_at",
-            "longitude",
-            "latitude",
-            "n_value",
-            "p_value",
-            "k_value",
-            "ph",
-            "temperature",
-            "humidity",
-            "rainfall",
-            "recommendation",
-            "lahan_id",
-            "lahan(id, nama, deskripsi)"   # Hanya metadata lahan, BUKAN longitude/latitude
+            "*, lahan(id, nama, deskripsi)"
         ).order("created_at", desc=True).execute()
 
         mapped_data = []
