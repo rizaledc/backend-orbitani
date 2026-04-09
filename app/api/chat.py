@@ -1,9 +1,7 @@
 """
 chat.py
 AI Agronomist endpoints for Orbitani.
-
-Model: gemini-3.1-flash-lite (Round-Robin + BYOK)
-
+Model: gemini-2.5-flash (Round-Robin + BYOK)
 Endpoints:
   POST /ask            → quick Q&A chat
   POST /analyze-lahan  → satellite sync + ML prediction + deep AI analysis
@@ -12,7 +10,7 @@ Flow analyze-lahan:
   1. Ambil koordinat lahan dari DB
   2. Trigger GEE Hybrid (Sentinel-2 + Landsat-8/9 + MODIS) → simpan data fresh ke DB
   3. ML Random Forest prediction → simpan rekomendasi ke DB
-  4. Kirim data + prediksi ML ke Gemini 3.1 Flash Lite untuk analisis mendalam
+  4. Kirim data + prediksi ML ke Gemini 2.5 Flash untuk analisis mendalam
 
 Rate Limiting:
   Role 'user' : 5 RPM  |  Role 'admin'/'superadmin' : unlimited
@@ -43,7 +41,7 @@ class AnalyzeLahanRequest(BaseModel):
 
 
 # ---------------------------------------------------------------
-# POST /ask — Quick Q&A (gemini-3.1-flash-lite)
+# POST /ask — Quick Q&A (gemini-2.5-flash)
 # ---------------------------------------------------------------
 @router.post("/ask")
 async def ask_agronomist_api(
@@ -52,7 +50,7 @@ async def ask_agronomist_api(
 ):
     """
     Konsultasi tanya jawab bebas dengan AI Agronomist.
-    Menggunakan gemini-3.1-flash-lite dengan Round-Robin key pool.
+    Menggunakan gemini-2.5-flash dengan Round-Robin key pool.
     Mendukung BYOK (user_api_key opsional).
     Rate limit: 5 RPM untuk role 'user'.
     """
@@ -64,7 +62,7 @@ async def ask_agronomist_api(
 
 
 # ---------------------------------------------------------------
-# POST /analyze-lahan — Deep Analysis (gemini-3.1-flash-lite)
+# POST /analyze-lahan — Deep Analysis (gemini-2.5-flash)
 # ---------------------------------------------------------------
 @router.post("/analyze-lahan")
 async def analyze_lahan_api(
@@ -74,14 +72,14 @@ async def analyze_lahan_api(
 ):
     """
     Menganalisis lahan menggunakan data satelit FRESH dari GEE Hybrid
-    lalu dilempar ke Gemini 3.1 Flash Lite.
+    lalu dilempar ke Gemini 2.5 Flash.
     Mendukung BYOK (user_api_key opsional).
 
     Flow:
       1. Ambil koordinat centroid lahan dari tabel lahan.
       2. Trigger sinkronisasi GEE (Sentinel-2 + Landsat-8/9 + MODIS).
       3. ML Random Forest prediction → simpan ke DB.
-      4. Data fresh dikirim ke Gemini 3.1 Flash Lite untuk analisis.
+      4. Data fresh dikirim ke Gemini 2.5 Flash untuk analisis.
 
     Rate limit: 5 RPM untuk role 'user'.
     """

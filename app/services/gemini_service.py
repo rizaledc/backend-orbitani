@@ -2,7 +2,7 @@
 gemini_service.py
 Round-Robin + BYOK Gemini AI service for Orbitani.
 
-Model: gemini-3.1-flash-lite
+Model: gemini-2.5-flash
 
 Strategi API Key:
   Prioritas 1 (BYOK): Jika user_api_key dikirim, gunakan key tersebut.
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Model Constant
 # ---------------------------------------------------------------------------
-MODEL_NAME = "gemini-3.1-flash-lite"
+MODEL_NAME = "gemini-2.5-flash"
 
 # Backward-compatible aliases
 MODEL_FAST = MODEL_NAME
@@ -67,21 +67,7 @@ def _next_rr_index() -> int:
 # ---------------------------------------------------------------------------
 # System Instruction (shared)
 # ---------------------------------------------------------------------------
-SYSTEM_INSTRUCTION = """Anda adalah Pakar Agronomi Senior dan Ilmuwan Data utama untuk Proyek Orbitani. 
-Tugas Anda adalah memberikan analisis teknis, ringkas, dan praktis mengenai kondisi hara tanah dan rekomendasi pemupukan.
-
-KONTEKS KHUSUS:
-1. LOKASI: Fokus utama adalah Lahan Hibisc di Bogor, Jawa Barat. Pahami karakteristik tanah latosol/podsolik merah kuning yang umum di Bogor (curah hujan tinggi, pH cenderung asam).
-2. TANAMAN: Fokus pada optimasi tanaman Kenaf (Hibiscus cannabinus). Kenaf membutuhkan Nitrogen tinggi untuk serat dan Kalium untuk kekuatan batang.
-3. DATA: Anda akan menerima data hara (N, P, K), pH, dan iklim dari satelit Sentinel-2 (resolusi 10m) dengan suhu permukaan dari Landsat-8/9 L2 dan MODIS Terra.
-
-ATURAN JAWABAN:
-- Berikan analisis dalam 2 poin kritis saja (sesuai permintaan sistem).
-- Gunakan bahasa profesional namun mudah dimengerti pengguna modern.
-- Format jawaban wajib menggunakan Markdown yang rapi.
-- Jika pH di bawah 6.0, selalu sarankan pemberian kapur dolomit.
-- Jika Nitrogen (N) rendah, fokus pada efisiensi pupuk Urea atau ZA.
-- Gunakan terminologi "Orbitani Smart Analysis"."""
+SYSTEM_INSTRUCTION = """Kamu adalah AI Agronomist dari Orbitani. Jawab pertanyaan pengguna dengan ramah dan profesional. ATURAN FORMATTING MUTLAK: Jangan pernah menggunakan format LaTeX, Markdown Math, atau simbol equation ($ atau $$) untuk angka, pecahan, atau rumus. Tuliskan semua angka, dosis, dan perhitungan menggunakan teks biasa yang mudah dibaca (contoh: gunakan '1/2' bukan pecahan LaTeX, gunakan 'derajat Celcius' atau 'C' biasa). Jangan buat tabel yang rumit, gunakan list/bullet point biasa."""
 
 
 # ---------------------------------------------------------------------------
@@ -93,14 +79,15 @@ def _call_gemini(api_key: str, prompt: str) -> str:
     Raise exception jika gagal.
     """
     from google import genai
+    from google.genai import types
 
     client = genai.Client(api_key=api_key)
     response = client.models.generate_content(
         model=MODEL_NAME,
         contents=prompt,
-        config={
-            "system_instruction": SYSTEM_INSTRUCTION,
-        },
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_INSTRUCTION,
+        ),
     )
     return response.text
 
