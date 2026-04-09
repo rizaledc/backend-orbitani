@@ -26,9 +26,17 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Model Constant
+# Model Fallback List (Prioritas Tertinggi → Terendah)
 # ---------------------------------------------------------------------------
-MODEL_NAME = "gemini-2.5-flash"
+FALLBACK_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+]
+
+# Model utama (untuk response metadata & backward-compat)
+MODEL_NAME = FALLBACK_MODELS[0]
 
 # Backward-compatible aliases
 MODEL_FAST = MODEL_NAME
@@ -71,31 +79,83 @@ SYSTEM_INSTRUCTION = """Kamu adalah AI Agronomist dari Orbitani. Jawab pertanyaa
 
 
 # ---------------------------------------------------------------------------
-# Core: Per-Request Client + Generate
+# Helper: Deteksi jenis error
 # ---------------------------------------------------------------------------
-def _call_gemini(api_key: str, prompt: str) -> str:
-    """
-    Membuat genai.Client baru per-request (thread-safe), lalu memanggil model.
-    Raise exception jika gagal.
-    """
-    from google import genai
-    from google.genai import types
-
-    client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_INSTRUCTION,
-        ),
+def _is_server_error(e: Exception) -> bool:
+    """Cek apakah exception adalah 5xx Server Error (503, 500, overloaded, dll.)."""
+    err_str = str(e).lower()
+    return (
+        "503" in err_str
+        or "500" in err_str
+        or "overloaded" in err_str
+        or "service unavailable" in err_str
+        or "internal server error" in err_str
+        or "internal_error" in err_str
     )
-    return response.text
 
 
 def _is_rate_limit_error(e: Exception) -> bool:
     """Cek apakah exception adalah 429 Rate Limit."""
     err_str = str(e).lower()
     return "429" in err_str or "resource_exhausted" in err_str or "rate limit" in err_str
+
+
+# ---------------------------------------------------------------------------
+# Core: Per-Request Client + Generate (dengan Model Fallback Berlapis)
+# ---------------------------------------------------------------------------
+def _call_gemini(api_key: str, prompt: str) -> str:
+    """
+    Membuat genai.Client baru per-request (thread-safe), lalu memanggil model.
+    Jika model utama terkena 5xx (server overload), otomatis fallback ke model
+    berikutnya dalam daftar FALLBACK_MODELS.
+    Raise exception jika semua model gagal atau error bukan 5xx.
+    """
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=api_key)
+    config = types.GenerateContentConfig(
+        system_instruction=SYSTEM_INSTRUCTION,
+    )
+
+    last_error = None
+
+    for model_name in FALLBACK_MODELS:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=config,
+            )
+            if model_name != FALLBACK_MODELS[0]:
+                logger.info("Berhasil dengan model fallback: %s", model_name)
+            return response.text
+
+        except Exception as e:
+            last_error = e
+            if _is_server_error(e):
+                # Model ini sedang down/overloaded → coba model berikutnya
+                next_idx = FALLBACK_MODELS.index(model_name) + 1
+                next_model = FALLBACK_MODELS[next_idx] if next_idx < len(FALLBACK_MODELS) else "NONE"
+                logger.warning(
+                    "%s down (%s), falling back to %s...",
+                    model_name, type(e).__name__, next_model,
+                )
+                continue
+            else:
+                # Error non-5xx (429, invalid key, dll.) → lempar ke caller
+                raise
+
+    # Semua model dalam daftar gagal (5xx semua)
+    logger.error(
+        "Semua %d model fallback gagal (server overload). Last error: %s",
+        len(FALLBACK_MODELS), last_error,
+    )
+    from fastapi import HTTPException
+    raise HTTPException(
+        status_code=503,
+        detail="Server sedang sibuk, tunggu beberapa saat lagi",
+    )
 
 
 # ---------------------------------------------------------------------------
