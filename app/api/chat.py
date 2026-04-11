@@ -16,7 +16,7 @@ Rate Limiting:
   Role 'user' : 5 RPM  |  Role 'admin'/'superadmin' : unlimited
 """
 import logging
-from typing import Optional
+from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel, Field
 from supabase import Client
@@ -38,6 +38,11 @@ class ChatRequest(BaseModel):
 class AnalyzeLahanRequest(BaseModel):
     lahan_id: int
     user_api_key: Optional[str] = None  # BYOK: Bring Your Own Key
+
+
+class AiChatHistoryCreate(BaseModel):
+    role: Literal["user", "ai"] = Field(..., description="Pengirim pesan: 'user' atau 'ai'")
+    content: str = Field(..., min_length=1, max_length=10000)
 
 
 # ---------------------------------------------------------------
@@ -197,3 +202,59 @@ Berikan analisis lanjutan berdasarkan rekomendasi ini:
         "satellite_data": sat_data,
         "ai_analysis": answer,
     }
+
+
+# ---------------------------------------------------------------
+# GET /history — Ambil riwayat AI Chat milik user yang login
+# ---------------------------------------------------------------
+@router.get("/history")
+def get_ai_chat_history(
+    db: Client = Depends(get_supabase),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Mengambil seluruh riwayat obrolan AI Agronomist milik current_user.
+    Diurutkan berdasarkan created_at secara Ascending (lama ke baru).
+    Tabel: ai_chat_history (user_id: Integer).
+    """
+    try:
+        res = (
+            db.table("ai_chat_history")
+            .select("id, role, content, created_at")
+            .eq("user_id", current_user["id"])
+            .order("created_at", desc=False)
+            .execute()
+        )
+        return {"status": "success", "data": res.data}
+    except Exception as e:
+        logger.error("Error fetching AI chat history: %s", e)
+        raise HTTPException(status_code=500, detail="Gagal mengambil riwayat chat AI.")
+
+
+# ---------------------------------------------------------------
+# POST /history — Simpan 1 baris pesan baru ke ai_chat_history
+# ---------------------------------------------------------------
+@router.post("/history")
+def save_ai_chat_history(
+    req: AiChatHistoryCreate,
+    db: Client = Depends(get_supabase),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Menyimpan 1 baris pesan baru ke tabel ai_chat_history.
+    Dipanggil oleh frontend setiap kali:
+      - User mengirim pesan (role='user')
+      - Gemini selesai menjawab (role='ai')
+    user_id diambil otomatis dari token JWT (Integer).
+    """
+    try:
+        new_row = {
+            "user_id": current_user["id"],  # Integer dari JWT
+            "role": req.role,
+            "content": req.content,
+        }
+        saved = db.table("ai_chat_history").insert(new_row).execute()
+        return {"status": "success", "data": saved.data[0]}
+    except Exception as e:
+        logger.error("Error saving AI chat history: %s", e)
+        raise HTTPException(status_code=500, detail="Gagal menyimpan pesan chat AI.")
