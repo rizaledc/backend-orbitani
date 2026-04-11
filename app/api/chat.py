@@ -43,6 +43,12 @@ class AnalyzeLahanRequest(BaseModel):
 class AiChatHistoryCreate(BaseModel):
     role: Literal["user", "ai"] = Field(..., description="Pengirim pesan: 'user' atau 'ai'")
     content: str = Field(..., min_length=1, max_length=10000)
+    session_id: Optional[str] = Field(None, description="ID Sesi obrolan (UUID)")
+    session_title: Optional[str] = Field(None, description="Judul sesi (dihasilkan frontend/AI)")
+
+
+class SessionRenameRequest(BaseModel):
+    session_title: str = Field(..., min_length=1, max_length=200, description="Judul sesi baru")
 
 
 # ---------------------------------------------------------------
@@ -209,26 +215,106 @@ Berikan analisis lanjutan berdasarkan rekomendasi ini:
 # ---------------------------------------------------------------
 @router.get("/history")
 def get_ai_chat_history(
+    session_id: Optional[str] = None,
     db: Client = Depends(get_supabase),
     current_user: dict = Depends(get_current_user),
 ):
     """
-    Mengambil seluruh riwayat obrolan AI Agronomist milik current_user.
+    Mengambil seluru riwayat obrolan AI Agronomist milik current_user.
+    Bila session_id dikirimkan, hanya mengembalikan chat untuk sesi tersebut.
     Diurutkan berdasarkan created_at secara Ascending (lama ke baru).
-    Tabel: ai_chat_history (user_id: Integer).
     """
     try:
-        res = (
+        query = (
             db.table("ai_chat_history")
-            .select("id, role, content, created_at")
+            .select("id, role, content, created_at, session_id, session_title")
             .eq("user_id", current_user["id"])
-            .order("created_at", desc=False)
-            .execute()
         )
+        if session_id:
+            query = query.eq("session_id", session_id)
+            
+        res = query.order("created_at", desc=False).execute()
         return {"status": "success", "data": res.data}
     except Exception as e:
         logger.error("Error fetching AI chat history: %s", e)
         raise HTTPException(status_code=500, detail="Gagal mengambil riwayat chat AI.")
+
+
+# ---------------------------------------------------------------
+# GET /sessions — Mengambil daftar sesi unik milik user
+# ---------------------------------------------------------------
+@router.get("/sessions")
+def get_ai_chat_sessions(
+    db: Client = Depends(get_supabase),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Mengambil daftar riwayat sesi terbaru (dikembalikan list of session_id & session_title).
+    Group by session_id dihitung di backend karena max row hanya 25 (sangat ringan).
+    """
+    try:
+        res = (
+            db.table("ai_chat_history")
+            .select("session_id, session_title, created_at")
+            .eq("user_id", current_user["id"])
+            .order("created_at", desc=True)
+            .execute()
+        )
+        
+        seen_sessions = set()
+        sessions = []
+        for row in res.data:
+            sid = row.get("session_id")
+            # Skip messages without session tracking
+            if not sid:
+                continue
+            if sid not in seen_sessions:
+                seen_sessions.add(sid)
+                sessions.append({
+                    "session_id": sid,
+                    "session_title": row.get("session_title", "Chat Baru"),
+                    "last_active": row.get("created_at")
+                })
+                
+        return {"status": "success", "data": sessions}
+    except Exception as e:
+        logger.error("Error fetching AI sessions: %s", e)
+        raise HTTPException(status_code=500, detail="Gagal mengambil daftar sesi AI.")
+
+
+# ---------------------------------------------------------------
+# PATCH /sessions/{session_id} — Mengubah judul sesi
+# ---------------------------------------------------------------
+@router.patch("/sessions/{session_id}")
+def rename_ai_chat_session(
+    session_id: str,
+    req: SessionRenameRequest,
+    db: Client = Depends(get_supabase),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Mengubah judul sesi pada semua pesan yang terangkum dalam session_id yang diberikan.
+    Hanya bisa dilakukan bila user_id chat sesuai dengan token pengguna.
+    """
+    try:
+        updated = (
+            db.table("ai_chat_history")
+            .update({"session_title": req.session_title})
+            .eq("user_id", current_user["id"])
+            .eq("session_id", session_id)
+            .execute()
+        )
+        
+        if not updated.data:
+            raise HTTPException(status_code=404, detail="Sesi tidak ditemukan atau tidak memiliki akses.")
+            
+        return {"status": "success", "message": "Judul sesi berhasil diperbarui", "session_title": req.session_title}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error renaming AI session: %s", e)
+        raise HTTPException(status_code=500, detail="Gagal merename sesi AI.")
+
 
 
 # ---------------------------------------------------------------
@@ -293,6 +379,8 @@ def save_ai_chat_history(
             "user_id": user_id,
             "role": req.role,
             "content": req.content,
+            "session_id": req.session_id,
+            "session_title": req.session_title,
         }
         saved = db.table("ai_chat_history").insert(new_row).execute()
         return {"status": "success", "data": saved.data[0]}
