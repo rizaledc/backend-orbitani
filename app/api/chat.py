@@ -17,7 +17,7 @@ Rate Limiting:
 """
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel, Field
 from supabase import Client
 
@@ -46,18 +46,23 @@ class AnalyzeLahanRequest(BaseModel):
 @router.post("/ask")
 async def ask_agronomist_api(
     req: ChatRequest,
+    x_custom_gemini_key: Optional[str] = Header(None, alias="X-Custom-Gemini-Key"),
     current_user: dict = Depends(get_current_user),
 ):
     """
     Konsultasi tanya jawab bebas dengan AI Agronomist.
     Menggunakan gemini-2.5-flash dengan Round-Robin key pool.
-    Mendukung BYOK (user_api_key opsional).
+    Mendukung BYOK (user_api_key opsional via body atau header).
+    Prioritas key: Header X-Custom-Gemini-Key > Body user_api_key > Pool round-robin.
     Rate limit: 5 RPM untuk role 'user'.
     """
     check_rate_limit(current_user)
 
+    # Prioritas: Header > Body > Pool (round-robin)
+    effective_key = x_custom_gemini_key or req.user_api_key
+
     logger.info("User '%s' asking fast AI: %s...", current_user["username"], req.message[:60])
-    answer = await ask_fast(req.message, user_api_key=req.user_api_key)
+    answer = await ask_fast(req.message, user_api_key=effective_key)
     return {"status": "success", "model": MODEL_FAST, "answer": answer}
 
 
@@ -67,13 +72,15 @@ async def ask_agronomist_api(
 @router.post("/analyze-lahan")
 async def analyze_lahan_api(
     req: AnalyzeLahanRequest,
+    x_custom_gemini_key: Optional[str] = Header(None, alias="X-Custom-Gemini-Key"),
     db: Client = Depends(get_supabase),
     current_user: dict = Depends(get_current_user),
 ):
     """
     Menganalisis lahan menggunakan data satelit FRESH dari GEE Hybrid
     lalu dilempar ke Gemini 2.5 Flash.
-    Mendukung BYOK (user_api_key opsional).
+    Mendukung BYOK (user_api_key opsional via body atau header).
+    Prioritas key: Header X-Custom-Gemini-Key > Body user_api_key > Pool round-robin.
 
     Flow:
       1. Ambil koordinat centroid lahan dari tabel lahan.
@@ -84,6 +91,9 @@ async def analyze_lahan_api(
     Rate limit: 5 RPM untuk role 'user'.
     """
     check_rate_limit(current_user)
+
+    # Prioritas: Header > Body > Pool (round-robin)
+    effective_key = x_custom_gemini_key or req.user_api_key
 
     # 1. Ambil data lahan + pastikan milik user
     lahan_res = db.table("lahan").select("*").eq("id", req.lahan_id).execute()
@@ -178,7 +188,7 @@ Berikan analisis lanjutan berdasarkan rekomendasi ini:
         "[METRIC_DEEP_ANALYSIS] lahan_id=%d | username=%s | recommendation=%s | model=%s",
         req.lahan_id, current_user["username"], ml_recommendation, MODEL_DEEP,
     )
-    answer = await ask_deep(prompt, user_api_key=req.user_api_key)
+    answer = await ask_deep(prompt, user_api_key=effective_key)
 
     return {
         "status": "success",
