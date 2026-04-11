@@ -233,7 +233,10 @@ def get_ai_chat_history(
 
 # ---------------------------------------------------------------
 # POST /history — Simpan 1 baris pesan baru ke ai_chat_history
+# Retensi: max 25 pesan per user (admin/user). Superadmin unlimited.
 # ---------------------------------------------------------------
+MAX_CHAT_HISTORY = 25
+
 @router.post("/history")
 def save_ai_chat_history(
     req: AiChatHistoryCreate,
@@ -246,15 +249,56 @@ def save_ai_chat_history(
       - User mengirim pesan (role='user')
       - Gemini selesai menjawab (role='ai')
     user_id diambil otomatis dari token JWT (Integer).
+
+    Kebijakan Retensi (Auto-Pruning):
+      - Superadmin: Unlimited (tidak ada limit).
+      - Admin / User: Maksimal 25 pesan. Jika sudah penuh,
+        pesan tertua dihapus sebelum pesan baru disimpan.
     """
+    user_id = current_user["id"]
+    user_role = current_user.get("role", "user")
+
     try:
+        # --- Auto-Pruning: hanya untuk role non-superadmin ---
+        if user_role != "superadmin":
+            # 1. Hitung total pesan milik user ini
+            count_res = (
+                db.table("ai_chat_history")
+                .select("id", count="exact")
+                .eq("user_id", user_id)
+                .execute()
+            )
+            total_messages = count_res.count if count_res.count is not None else len(count_res.data)
+
+            # 2. Jika sudah mencapai limit, hapus pesan tertua
+            if total_messages >= MAX_CHAT_HISTORY:
+                oldest_res = (
+                    db.table("ai_chat_history")
+                    .select("id")
+                    .eq("user_id", user_id)
+                    .order("created_at", desc=False)
+                    .limit(1)
+                    .execute()
+                )
+                if oldest_res.data:
+                    oldest_id = oldest_res.data[0]["id"]
+                    db.table("ai_chat_history").delete().eq("id", oldest_id).execute()
+                    logger.info(
+                        "Auto-pruned oldest chat message (id=%s) for user_id=%d (total was %d)",
+                        oldest_id, user_id, total_messages,
+                    )
+
+        # --- Simpan pesan baru ---
         new_row = {
-            "user_id": current_user["id"],  # Integer dari JWT
+            "user_id": user_id,
             "role": req.role,
             "content": req.content,
         }
         saved = db.table("ai_chat_history").insert(new_row).execute()
         return {"status": "success", "data": saved.data[0]}
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Error saving AI chat history: %s", e)
         raise HTTPException(status_code=500, detail="Gagal menyimpan pesan chat AI.")
