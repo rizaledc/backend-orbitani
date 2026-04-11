@@ -316,6 +316,42 @@ def rename_ai_chat_session(
         raise HTTPException(status_code=500, detail="Gagal merename sesi AI.")
 
 
+# ---------------------------------------------------------------
+# DELETE /sessions/{session_id} — Menghapus obrolan dalam sesi
+# ---------------------------------------------------------------
+@router.delete("/sessions/{session_id}")
+def delete_ai_chat_session(
+    session_id: str,
+    db: Client = Depends(get_supabase),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Menghapus semua baris pesan (riwayat) yang terkait dengan session_id yang diberikan.
+    Hanya bisa dilakukan bila user_id chat sesuai dengan token pengguna (cross-user protection).
+    """
+    try:
+        deleted = (
+            db.table("ai_chat_history")
+            .delete()
+            .eq("user_id", current_user["id"])
+            .eq("session_id", session_id)
+            .execute()
+        )
+        
+        # Jika deleted.data kosong, berarti tidak ada baris yang dihapus
+        # (Namun Supabase v2 Python client mengembalikan hasil pada .data)
+        if not deleted.data:
+            raise HTTPException(status_code=404, detail="Sesi tidak ditemukan atau tidak memiliki akses untuk dihapus.")
+            
+        return {"status": "success", "message": "Sesi berhasil dihapus."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error deleting AI session: %s", e)
+        raise HTTPException(status_code=500, detail="Gagal menghapus sesi AI.")
+
+
+
 
 # ---------------------------------------------------------------
 # POST /history — Simpan 1 baris pesan baru ke ai_chat_history
