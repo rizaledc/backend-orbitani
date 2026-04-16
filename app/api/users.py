@@ -129,28 +129,43 @@ def user_stats(
 # ---------------------------------------------------------------
 # GET / — Daftar semua user (superadmin & admin, tenant-aware)
 # ---------------------------------------------------------------
-@router.get("/", response_model=list[UserOut])
+@router.get("/")
 def list_users(
     db: Client = Depends(get_supabase),
     current_user: dict = Depends(require_roles(["superadmin", "admin"])),
 ):
     """
-    superadmin: melihat semua user.
+    superadmin: melihat semua user beserta nama organisasinya.
     admin: hanya melihat user dalam organisasinya sendiri.
+    Response menyertakan field `organization_name` untuk kebutuhan UI.
     """
     if current_user["role"] == "superadmin":
-        result = db.table("users").select("id, username, role, name, email, organization_id").execute()
+        result = db.table("users").select("id, username, role, name, email, description, organization_id").execute()
     else:
         org_id = current_user.get("organization_id")
         if not org_id:
             return []
         result = (
             db.table("users")
-            .select("id, username, role, name, email, organization_id")
+            .select("id, username, role, name, email, description, organization_id")
             .eq("organization_id", org_id)
             .execute()
         )
-    return result.data
+
+    users = result.data
+
+    # Kumpulkan semua org_id unik lalu ambil sekali (efisien, hindari N+1 query)
+    org_ids = list({u["organization_id"] for u in users if u.get("organization_id")})
+    org_map: dict[int, str] = {}
+    if org_ids:
+        org_res = db.table("organizations").select("id, name").in_("id", org_ids).execute()
+        org_map = {o["id"]: o["name"] for o in org_res.data}
+
+    # Gabungkan organization_name ke setiap user row
+    for u in users:
+        u["organization_name"] = org_map.get(u.get("organization_id"))
+
+    return users
 
 
 # ================================================================
@@ -222,6 +237,13 @@ def delete_user(
     current_user: dict = Depends(require_roles(["superadmin", "admin"])),
 ):
     """Menghapus user berdasarkan ID. superadmin (semua) atau admin (hanya dalam orgnya)."""
+    # Guard: tidak boleh hapus diri sendiri
+    if user_id == current_user["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tidak dapat menghapus akun Anda sendiri",
+        )
+
     existing = db.table("users").select("id, username, role, organization_id").eq("id", user_id).execute()
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User tidak ditemukan")
