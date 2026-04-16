@@ -1,17 +1,101 @@
 import logging
+import re
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
 from app.db.database import get_supabase
-from app.models.schemas import UserOut, RoleUpdate
+from app.models.schemas import UserOut, RoleUpdate, ProfileUpdate
 from app.core.security import get_current_user, require_roles
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Pola valid untuk username (sama seperti UserCreate)
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]+$")
+
+
+# ================================================================
+# STATIC ROUTES — HARUS DI ATAS SEMUA DYNAMIC ROUTE (/{user_id})
+# ================================================================
 
 # ---------------------------------------------------------------
-# GET /stats — Statistik user (current user)
+# PATCH /me — Update profil user yang sedang login
+# ---------------------------------------------------------------
+@router.patch("/me", response_model=UserOut)
+def update_my_profile(
+    data: ProfileUpdate,
+    db: Client = Depends(get_supabase),
+    current_user: dict = Depends(get_current_user),
+):
+    """Mengubah profil dasar (name, username, description) milik user yang sedang login."""
+    update_payload: dict = {}
+
+    # name: izinkan string kosong (untuk "menghapus" nama)
+    if data.name is not None:
+        update_payload["name"] = data.name
+
+    # description: izinkan string kosong
+    if data.description is not None:
+        update_payload["description"] = data.description
+
+    # username: validasi format di sini (bukan di Pydantic) supaya "" tidak 422
+    if data.username is not None:
+        stripped = data.username.strip()
+        if stripped:
+            # Hanya divalidasi jika bukan string kosong
+            if len(stripped) < 3:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Username minimal 3 karakter",
+                )
+            if not _USERNAME_RE.match(stripped):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Username hanya boleh mengandung huruf, angka, dan underscore",
+                )
+            # Cek keunikan username (kecuali milik diri sendiri)
+            conflict = (
+                db.table("users")
+                .select("id")
+                .eq("username", stripped)
+                .neq("id", current_user["id"])
+                .execute()
+            )
+            if conflict.data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Username '{stripped}' sudah digunakan oleh pengguna lain",
+                )
+            update_payload["username"] = stripped
+        # Jika string kosong (""), username tidak diupdate (diabaikan dengan aman)
+
+    if not update_payload:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tidak ada field yang dikirim untuk diperbarui",
+        )
+
+    result = (
+        db.table("users")
+        .update(update_payload)
+        .eq("id", current_user["id"])
+        .execute()
+    )
+
+    if not result.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User tidak ditemukan")
+
+    logger.info(
+        "Profil user '%s' (ID %d) diperbarui: %s",
+        current_user["username"],
+        current_user["id"],
+        list(update_payload.keys()),
+    )
+    return result.data[0]
+
+
+# ---------------------------------------------------------------
+# GET /stats — Statistik user (current user yang login)
 # ---------------------------------------------------------------
 @router.get("/stats")
 def user_stats(
@@ -68,6 +152,10 @@ def list_users(
         )
     return result.data
 
+
+# ================================================================
+# DYNAMIC ROUTES — Di bawah semua static route
+# ================================================================
 
 # ---------------------------------------------------------------
 # PUT /{user_id}/role — Ubah role user (superadmin only)

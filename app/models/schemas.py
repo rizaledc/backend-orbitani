@@ -64,6 +64,29 @@ class RoleUpdate(BaseModel):
     role: str = Field(..., description="Role baru: admin atau user")
 
 
+class ProfileUpdate(BaseModel):
+    # Semua field Optional — frontend boleh kirim sebagian atau seluruhnya.
+    # Nilai None  = field tidak dikirim (tidak diupdate).
+    # Nilai ""    = field dikirim kosong (disimpan sebagai "" di DB).
+    name: str | None = Field(default=None, max_length=100, description="Nama lengkap")
+    username: str | None = Field(
+        default=None,
+        max_length=50,
+        description="Username baru (huruf, angka, underscore, 3-50 karakter). Validasi format dilakukan di endpoint.",
+    )
+    description: str | None = Field(default=None, max_length=500, description="Bio / deskripsi singkat")
+
+
+class PasswordUpdate(BaseModel):
+    old_password: str = Field(..., min_length=1, max_length=72, description="Password lama")
+    new_password: str = Field(
+        ...,
+        min_length=8,
+        max_length=72,
+        description="Password baru (minimal 8 karakter, maksimal 72)",
+    )
+
+
 # ---------------------------------------------------------------
 # Organization Schemas
 # ---------------------------------------------------------------

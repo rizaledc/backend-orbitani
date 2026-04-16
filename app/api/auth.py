@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
 from app.db.database import get_supabase
-from app.models.schemas import UserCreate, UserLogin, Token
+from app.models.schemas import UserCreate, UserLogin, Token, PasswordUpdate
 from app.core.security import hash_password, verify_password, create_access_token, get_current_user
 
 logger = logging.getLogger(__name__)
@@ -81,3 +81,40 @@ def get_me(
          raise HTTPException(status_code=404, detail="User not found")
          
     return res.data[0]
+
+
+# ---------------------------------------------------------------
+# PUT /update-password
+# ---------------------------------------------------------------
+@router.put("/update-password")
+def update_password(
+    data: PasswordUpdate,
+    db: Client = Depends(get_supabase),
+    current_user: dict = Depends(get_current_user),
+):
+    """Mengganti password user yang sedang login. Wajib menyertakan password lama."""
+    # Ambil hash password saat ini dari database
+    result = (
+        db.table("users")
+        .select("password_hash")
+        .eq("id", current_user["id"])
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User tidak ditemukan")
+
+    stored_hash = result.data[0]["password_hash"]
+
+    # Verifikasi password lama
+    if not verify_password(data.old_password, stored_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password lama tidak cocok",
+        )
+
+    # Hash password baru dan update
+    new_hash = hash_password(data.new_password)
+    db.table("users").update({"password_hash": new_hash}).eq("id", current_user["id"]).execute()
+
+    logger.info("Password user '%s' (ID %d) berhasil diubah", current_user["username"], current_user["id"])
+    return {"detail": "Password berhasil diperbarui"}
