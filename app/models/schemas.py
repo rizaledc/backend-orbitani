@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Any
 
 
 # ---------------------------------------------------------------
@@ -49,15 +49,16 @@ class Token(BaseModel):
 
 
 class UserOut(BaseModel):
+    """Skema response user — semua field nullable agar aman dari data lama di DB."""
     id: int
     username: str
     role: str
-    name: str | None = None
-    email: str | None = None
-    description: str | None = None
-    organization_id: int | None = None
+    name: Optional[str] = None
+    email: Optional[str] = None
+    description: Optional[str] = None
+    organization_id: Optional[int] = None
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 class RoleUpdate(BaseModel):
@@ -143,3 +144,41 @@ class RetrainResponse(BaseModel):
     status: str
     message: str
     model_path: str | None = None
+
+
+# ---------------------------------------------------------------
+# Lahan Schemas
+# ---------------------------------------------------------------
+class LahanCreate(BaseModel):
+    """
+    Payload untuk membuat lahan baru.
+    - nama     : wajib diisi
+    - keterangan: opsional (alias backend untuk field 'deskripsi' di DB)
+    - koordinat: GeoJSON Polygon object (dict) ATAU array koordinat langsung (list)
+    """
+    nama: str = Field(..., min_length=1, max_length=200, description="Nama lahan (wajib)")
+    keterangan: Optional[str] = Field(default=None, max_length=1000, description="Keterangan/deskripsi lahan")
+    koordinat: Any = Field(..., description="GeoJSON Polygon dict atau array koordinat")
+
+
+class LahanUpdate(BaseModel):
+    """
+    Payload untuk update lahan — semua field opsional (PATCH semantics).
+    Hanya field yang dikirim yang akan diupdate.
+    """
+    nama: Optional[str] = Field(default=None, max_length=200, description="Nama baru lahan")
+    keterangan: Optional[str] = Field(default=None, max_length=1000, description="Keterangan baru")
+    koordinat: Optional[Any] = Field(default=None, description="Koordinat/poligon baru")
+
+
+class LahanOut(BaseModel):
+    """Response lahan — semua field nullable untuk kompatibilitas data lama."""
+    id: int
+    nama: Optional[str] = None
+    deskripsi: Optional[str] = None
+    koordinat: Optional[Any] = None
+    created_by: Optional[int] = None
+    organization_id: Optional[int] = None
+    created_at: Optional[str] = None
+
+    model_config = {"from_attributes": True}

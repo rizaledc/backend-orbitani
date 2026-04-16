@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
 from app.db.database import get_supabase
-from app.models.schemas import UserCreate, UserLogin, Token, PasswordUpdate
+from app.models.schemas import UserCreate, UserLogin, Token, PasswordUpdate, UserOut
 from app.core.security import hash_password, verify_password, create_access_token, get_current_user
 
 logger = logging.getLogger(__name__)
@@ -70,16 +70,21 @@ def login(data: UserLogin, db: Client = Depends(get_supabase)):
 # ---------------------------------------------------------------
 # GET /me
 # ---------------------------------------------------------------
-@router.get("/me")
+@router.get("/me", response_model=UserOut)
 def get_me(
     db: Client = Depends(get_supabase),
     current_user: dict = Depends(get_current_user)
 ):
     """Mendapatkan profil lengkap user yang sedang login."""
-    res = db.table("users").select("id, username, role, name, email, description").eq("id", current_user["id"]).execute()
+    res = (
+        db.table("users")
+        .select("id, username, role, name, email, description, organization_id")
+        .eq("id", current_user["id"])
+        .execute()
+    )
     if not res.data:
-         raise HTTPException(status_code=404, detail="User not found")
-         
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User tidak ditemukan")
+
     return res.data[0]
 
 
