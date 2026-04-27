@@ -12,13 +12,9 @@ import logging
 import os
 
 import joblib
-import numpy as np
-import pandas as pd
 import warnings
-import sklearn.ensemble
-import sklearn.preprocessing
 
-# Suppress sklearn InconsistentVersionWarning that pollutes logs due to 1.6 vs 1.8 mismatch
+# Suppress sklearn InconsistentVersionWarning due to version mismatch
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
 logger = logging.getLogger(__name__)
@@ -46,7 +42,7 @@ def calibrate_input(data: dict) -> dict:
       N   : NDVI*2.5+0.5 → 0.5–3.0   → mapping ke skala training 0–120
       P   : B3/B8*30+10  → 10–40      → mapping ke skala training 10–80
       K   : B11/B12*150+50 → 50–200   → mapping ke skala training 20–150
-      humidity : NDTI    → 0.1–0.5     → mapping ke persentase kelembapan 60–99%
+      humidity : NDTI    → 0.1–0.5     → mapping ke persentase kelembapan 70–99%
       temperature : sudah Celsius dari GEE, langsung pakai
       rainfall : CHIRPS tahunan → dibagi 12 → bulanan (skala training max ~350)
     """
@@ -62,8 +58,8 @@ def calibrate_input(data: dict) -> dict:
     calibrated_n = raw_n * 20                         # GEE (1-3) -> menjadi skala 20-60
     calibrated_p = raw_p                              # P sudah dalam batas aman
     calibrated_k = raw_k / 2                          # GEE (>300) -> ditekan ke skala ~150
-    calibrated_temp = raw_temp                        # Aman
-    calibrated_hum = min(60 + (raw_hum * 60), 99.0)  # NDTI (0.0-0.5) -> kelembapan % (60-99)
+    calibrated_temp = raw_temp - 3.0                   # LST satelit → suhu udara (offset empiris)
+    calibrated_hum = min(70 + (raw_hum * 60), 99.0)  # NDTI (0.0-0.5) -> kelembapan % (70-99)
     calibrated_ph = raw_ph                            # Aman
     calibrated_rain = raw_rain / 12                   # GEE (Tahunan) -> diubah ke Bulanan
 
@@ -112,10 +108,6 @@ def predict(input_data: dict) -> dict:
             calibrated_data["rainfall"]
         ]]
         
-        # Karena minmax_scaler aslinya dilatih dengan DataFrame pandas yang memiliki nama kolom,
-        # lebih aman jika kita tetap menjadikannya DataFrame agar tidak ada warning,
-        # tapi karena instruksi pengguna eksplisit meminta list array, kita pass array-nya langsung,
-        # atau kita pass dataframe dengan kolom terurut. Kita ikuti saja features_array.
         scaled_features = scaler.transform(features_array)
         prediction = model.predict(scaled_features)
         recommendation = encoder.inverse_transform(prediction)[0]
