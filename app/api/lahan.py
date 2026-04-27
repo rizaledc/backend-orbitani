@@ -185,37 +185,12 @@ def analyze_lahan(
             detail="Lahan tidak memiliki data koordinat. Tambahkan poligon terlebih dahulu.",
         )
 
-    # -- 2. Ambil data satelit terbaru sebagai template fitur ML --
-    try:
-        sat_res = (
-            db.table("satellite_results")
-            .select("n, p, k, temperature, humidity, ph, rainfall")
-            .eq("lahan_id", lahan_id)
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if not sat_res.data:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Lahan ini belum memiliki riwayat data satelit. Silakan tarik data satelit terlebih dahulu sebelum melakukan analisis spasial."
-            )
-        satellite_template = sat_res.data[0]
-        logger.info("Menggunakan data satelit terbaru sebagai template fitur ML untuk lahan %d.", lahan_id)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Gagal mengambil data satelit lahan %d: %s", lahan_id, e)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Terjadi kesalahan saat mengambil riwayat data satelit: {e}"
-        )
 
-    # -- 3. Jalankan analisis spasial --
+
+    # -- 2. Jalankan analisis spasial (Live GEE) --
     try:
-        hasil_rekomendasi = run_spatial_analysis(
+        hasil_rekomendasi, data_lengkap_titik = run_spatial_analysis(
             koordinat=koordinat,
-            satellite_data_template=satellite_template,
         )
     except ValueError as e:
         logger.error("Koordinat lahan %d tidak valid: %s", lahan_id, e)
@@ -230,8 +205,34 @@ def analyze_lahan(
             detail=f"Analisis spasial gagal: {e}",
         )
 
-    # -- 4. Simpan hasil ke database --
+    # -- 3. Simpan hasil 10 titik ke satellite_results sebagai log historis --
     terakhir_dianalisis = datetime.now(timezone.utc).isoformat()
+    
+    try:
+        sat_payloads = []
+        for point_data in data_lengkap_titik:
+            sat_payloads.append({
+                "lahan_id":          lahan_id,
+                "longitude":         point_data["lon"],
+                "latitude":          point_data["lat"],
+                "n":                 point_data["n"],
+                "p":                 point_data["p"],
+                "k":                 point_data["k"],
+                "ph":                point_data["ph"],
+                "temperature":       point_data["temperature"],
+                "humidity":          point_data["humidity"],
+                "rainfall":          point_data["rainfall"],
+                "ai_recommendation": point_data["ai_recommendation"],
+                "created_at":        terakhir_dianalisis,
+            })
+        if sat_payloads:
+            db.table("satellite_results").insert(sat_payloads).execute()
+            logger.info("Berhasil menyimpan %d log historis titik satelit untuk lahan %d", len(sat_payloads), lahan_id)
+    except Exception as e:
+        logger.error("Gagal menyimpan log historis satelit lahan %d: %s", lahan_id, e)
+        # Tidak melempar error agar proses analisis tetap selesai (hanya gagal save log)
+
+    # -- 4. Update tabel lahan dengan agregasi Majority Voting --
     update_payload = {
         "hasil_rekomendasi":  hasil_rekomendasi,
         "terakhir_dianalisis": terakhir_dianalisis,
@@ -241,7 +242,7 @@ def analyze_lahan(
     if not updated_res.data:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Analisis selesai, tetapi gagal menyimpan hasil ke database.",
+            detail="Analisis selesai, tetapi gagal menyimpan hasil ke database lahan.",
         )
 
     updated_lahan = updated_res.data[0]

@@ -100,50 +100,40 @@ def _sample_points_within(polygon: Polygon, n: int = N_SAMPLES) -> list[tuple[fl
 # Core: Prediksi batch + Majority Voting → Top-K hasil
 # ---------------------------------------------------------------------------
 def _predict_and_aggregate(
-    points: list[tuple[float, float]],
-    satellite_data_template: dict | None = None,
-) -> list[dict]:
+    points_data: list[dict]
+) -> tuple[list[dict], list[dict]]:
     """
-    Untuk setiap titik koordinat:
-      1. Ambil data referensi dari template satelit (jika ada), atau gunakan nilai default.
-      2. Panggil ml_service.predict().
-      3. Kumpulkan hasil, hitung frekuensi, dan kembalikan Top-K dalam persentase.
+    Untuk setiap data satelit di titik koordinat:
+      1. Panggil ml_service.predict().
+      2. Kumpulkan hasil, hitung frekuensi, dan kembalikan Top-K dalam persentase.
 
     Args:
-        points: List (lon, lat) dari _sample_points_within.
-        satellite_data_template: Dict data satelit yang bisa dijadikan basis prediksi
-                                 (N, P, K, temperature, humidity, ph, rainfall).
-                                 Jika None, gunakan nilai rata-rata default Indonesia.
+        points_data: List dict berisi data satelit per titik dari GEE.
 
     Returns:
-        List dict: [{"tanaman": str, "persentase": float}, ...] — Top-K, diurutkan descending.
+        Tuple: (List Top-K rekomendasi, List data mentah titik + rekomendasi)
     """
-    if not satellite_data_template:
-        raise RuntimeError("Data satelit aktual wajib tersedia untuk melakukan analisis spasial. Analisis dengan nilai default tidak diperbolehkan.")
-
-    base_data = satellite_data_template
     predictions: list[str] = []
 
-    for i, (lon, lat) in enumerate(points):
-        # Terapkan deviasi acak +/- 5% hingga 10% untuk mensimulasikan
-        # kondisi tanah/cuaca yang bervariasi di area poligon
+    for i, data in enumerate(points_data):
         input_data = {
-            "n":           base_data.get("n", base_data.get("N", 0)) * random.uniform(0.9, 1.1),
-            "p":           base_data.get("p", base_data.get("P", 0)) * random.uniform(0.9, 1.1),
-            "k":           base_data.get("k", base_data.get("K", 0)) * random.uniform(0.9, 1.1),
-            "temperature": base_data.get("temperature", 0) * random.uniform(0.95, 1.05),
-            "humidity":    base_data.get("humidity", 0) * random.uniform(0.95, 1.05),
-            "ph":          base_data.get("ph", 0) * random.uniform(0.95, 1.05),
-            "rainfall":    base_data.get("rainfall", 0) * random.uniform(0.9, 1.1),
+            "n":           data.get("n", 0),
+            "p":           data.get("p", 0),
+            "k":           data.get("k", 0),
+            "temperature": data.get("temperature", 0),
+            "humidity":    data.get("humidity", 0),
+            "ph":          data.get("ph", 0),
+            "rainfall":    data.get("rainfall", 0),
         }
         try:
             result = predict(input_data)
             tanaman = result.get("ai_recommendation", "Unknown")
+            data["ai_recommendation"] = tanaman
             predictions.append(tanaman)
-            logger.debug("Titik %d/%d (lon=%.4f, lat=%.4f) → %s", i + 1, len(points), lon, lat, tanaman)
+            logger.debug("Titik %d/%d (lon=%.4f, lat=%.4f) → %s", i + 1, len(points_data), data.get("lon"), data.get("lat"), tanaman)
         except Exception as e:
-            logger.warning("Prediksi gagal pada titik %d (lon=%.4f, lat=%.4f): %s", i + 1, lon, lat, e)
-            # Titik yang gagal diprediksi dilewati (tidak crash seluruh proses)
+            logger.warning("Prediksi gagal pada titik %d (lon=%.4f, lat=%.4f): %s", i + 1, len(points_data), data.get("lon"), data.get("lat"), e)
+            data["ai_recommendation"] = "Failed"
 
     if not predictions:
         raise RuntimeError("Semua prediksi gagal. Periksa kondisi model ML.")
@@ -165,7 +155,7 @@ def _predict_and_aggregate(
         "Agregasi selesai: %d prediksi, Top-%d → %s",
         total, TOP_K, [(h["tanaman"], h["persentase"]) for h in hasil],
     )
-    return hasil
+    return hasil, points_data
 
 
 # ---------------------------------------------------------------------------
@@ -173,25 +163,21 @@ def _predict_and_aggregate(
 # ---------------------------------------------------------------------------
 def run_spatial_analysis(
     koordinat: Any,
-    satellite_data_template: dict | None = None,
-) -> list[dict]:
+) -> tuple[list[dict], list[dict]]:
     """
     Entry point analisis spasial lahan.
 
     Args:
         koordinat: Field koordinat dari tabel lahan (GeoJSON dict atau array nested).
-        satellite_data_template: Data satelit aktual lahan untuk digunakan sebagai basis
-                                 fitur ML. Ambil dari satellite_results terbaru, atau None
-                                 untuk menggunakan nilai default.
 
     Returns:
-        List Top-K rekomendasi tanaman dalam format:
-        [{"tanaman": "Pisang", "persentase": 70.0}, ...]
+        Tuple: (List Top-K rekomendasi tanaman, List data mentah 10 titik)
 
     Raises:
         ValueError: Jika koordinat tidak valid / tidak bisa di-parse.
         RuntimeError: Jika sampling gagal atau semua prediksi ML gagal.
     """
+    from app.services.gee_service import extract_multi_point_data
     logger.info("Memulai analisis spasial...")
 
     # Step 1: Parse koordinat → Shapely Polygon
@@ -200,8 +186,12 @@ def run_spatial_analysis(
 
     # Step 2: Sampling titik acak di dalam polygon
     points = _sample_points_within(polygon, n=N_SAMPLES)
+    
+    # Step 3: Ekstraksi data satelit asli via GEE (Batch)
+    polygon_coords = list(polygon.exterior.coords)
+    points_data = extract_multi_point_data(polygon_coords, points)
 
-    # Step 3: Prediksi + Majority Voting
-    hasil = _predict_and_aggregate(points, satellite_data_template=satellite_data_template)
+    # Step 4: Prediksi + Majority Voting
+    hasil_rekomendasi, data_lengkap_titik = _predict_and_aggregate(points_data)
 
-    return hasil
+    return hasil_rekomendasi, data_lengkap_titik

@@ -404,3 +404,108 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
     except Exception as e:
         logger.error("Error GEE Point processing: %s", e)
         return {"error": "Internal Error", "message": str(e)}
+
+# ---------------------------------------------------------------------------
+# Fungsi Multi-Point (Dipakai oleh Spatial Analysis / Majority Voting)
+# ---------------------------------------------------------------------------
+def extract_multi_point_data(polygon_coords: list[list[float]], points: list[tuple[float, float]]) -> list[dict]:
+    """
+    Mengekstrak data satelit (N, P, K, pH, humidity, temperature, rainfall)
+    secara batch untuk banyak titik sekaligus dalam 1 request GEE menggunakan FeatureCollection.
+    """
+    try:
+        global _gee_ready
+        if not _gee_ready:
+            _init_gee()
+
+        # 1. Setup Geometries
+        roi_geom = ee.Geometry.Polygon([polygon_coords])
+        features = [ee.Feature(ee.Geometry.Point([lon, lat]).buffer(10), {"lon": lon, "lat": lat}) for lon, lat in points]
+        points_fc = ee.FeatureCollection(features)
+
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=365)
+        date_start_str = start_date.strftime("%Y-%m-%d")
+        date_end_str = end_date.strftime("%Y-%m-%d")
+
+        # 2. Sentinel-2 (Optik: N, P, K, pH, Humidity)
+        sentinel2 = (
+            ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+            .filterDate(date_start_str, date_end_str)
+            .filterBounds(roi_geom)
+            .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 20))
+            .map(_preprocess_s2)
+            .median()
+        )
+
+        ndvi = sentinel2.normalizedDifference(["B8", "B4"])
+        n_index = ndvi.multiply(2.5).add(0.5).rename("N") 
+        ph_index = sentinel2.select("B2").divide(sentinel2.select("B4")).multiply(1.5).add(4.5).rename("ph")
+        p_index = sentinel2.select("B3").divide(sentinel2.select("B8")).multiply(30).add(10).rename("P")
+        k_index = sentinel2.select("B11").divide(sentinel2.select("B12")).multiply(150).add(50).rename("K")
+        ndti = sentinel2.normalizedDifference(["B11", "B12"]).rename("humidity")
+
+        optical_composite = n_index.addBands([p_index, k_index, ph_index, ndti])
+
+        optical_stats = optical_composite.reduceRegions(
+            collection=points_fc,
+            reducer=ee.Reducer.mean(),
+            scale=10
+        ).getInfo()
+
+        # 3. Hybrid Temperature (Centroid)
+        centroid = roi_geom.centroid()
+        
+        l8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2").filterDate(date_start_str, date_end_str).filterBounds(roi_geom).filter(ee.Filter.lt("CLOUD_COVER", 50))
+        l9 = ee.ImageCollection("LANDSAT/LC09/C02/T1_L2").filterDate(date_start_str, date_end_str).filterBounds(roi_geom).filter(ee.Filter.lt("CLOUD_COVER", 50))
+        tci_landsat = l8.merge(l9).median().select("ST_B10").multiply(0.00341802).add(149.0).subtract(273.15)
+        
+        temp_dict = tci_landsat.reduceRegion(ee.Reducer.mean(), centroid.buffer(30), 30).getInfo()
+        temp_val = temp_dict.get("ST_B10")
+        
+        if temp_val is None:
+            modis = ee.ImageCollection("MODIS/061/MOD11A1").filterDate(date_start_str, date_end_str).filterBounds(roi_geom).median()
+            modis_temp = modis.select("LST_Day_1km").multiply(0.02).subtract(273.15)
+            temp_dict = modis_temp.reduceRegion(ee.Reducer.mean(), centroid.buffer(1000), 1000).getInfo()
+            temp_val = temp_dict.get("LST_Day_1km")
+            if temp_val is None:
+                temp_val = 26.5
+
+        # 4. Hybrid Rainfall (Centroid)
+        chirps = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY").filterDate(date_start_str, date_end_str).filterBounds(roi_geom).select("precipitation").sum()
+        rain_dict = chirps.reduceRegion(ee.Reducer.mean(), centroid.buffer(5000), 5000).getInfo()
+        rainfall_val = rain_dict.get("precipitation")
+        
+        if rainfall_val is None or float(rainfall_val) < 100:
+            gpm = ee.ImageCollection("NASA/GPM_L3/IMERG_V07").filterDate(date_start_str, date_end_str).filterBounds(roi_geom).select("precipitation")
+            gpm_annual = gpm.mean().multiply(24).multiply(365)
+            rain_dict = gpm_annual.reduceRegion(ee.Reducer.mean(), centroid.buffer(11000), 11132).getInfo()
+            rainfall_val = rain_dict.get("precipitation")
+            if rainfall_val is None or float(rainfall_val) < 100:
+                rainfall_val = 3500.0
+
+        # 5. Gabungkan Data
+        results = []
+        features_list = optical_stats.get("features", [])
+        for feat in features_list:
+            props = feat.get("properties", {})
+            lon = props.get("lon")
+            lat = props.get("lat")
+            
+            results.append({
+                "lon": lon,
+                "lat": lat,
+                "n": float(props.get("N") or 0.0),
+                "p": float(props.get("P") or 0.0),
+                "k": float(props.get("K") or 0.0),
+                "ph": float(props.get("ph") or 0.0),
+                "humidity": float(props.get("humidity") or 0.0),
+                "temperature": float(temp_val),
+                "rainfall": float(rainfall_val)
+            })
+
+        return results
+
+    except Exception as e:
+        logger.error("Error GEE Multi-Point processing: %s", e)
+        raise RuntimeError(f"Gagal memproses data satelit via GEE: {e}")
