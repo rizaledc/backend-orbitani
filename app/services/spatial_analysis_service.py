@@ -118,32 +118,23 @@ def _predict_and_aggregate(
     Returns:
         List dict: [{"tanaman": str, "persentase": float}, ...] — Top-K, diurutkan descending.
     """
-    # Nilai default realistis untuk konteks pertanian Indonesia
-    # (digunakan jika tidak ada data satelit aktual)
-    DEFAULT_TEMPLATE = {
-        "n": 50.0,
-        "p": 30.0,
-        "k": 50.0,
-        "temperature": 25.0,
-        "humidity": 75.0,
-        "ph": 6.5,
-        "rainfall": 150.0,
-    }
+    if not satellite_data_template:
+        raise RuntimeError("Data satelit aktual wajib tersedia untuk melakukan analisis spasial. Analisis dengan nilai default tidak diperbolehkan.")
 
-    base_data = satellite_data_template or DEFAULT_TEMPLATE
+    base_data = satellite_data_template
     predictions: list[str] = []
 
     for i, (lon, lat) in enumerate(points):
         # Terapkan deviasi acak +/- 5% hingga 10% untuk mensimulasikan
         # kondisi tanah/cuaca yang bervariasi di area poligon
         input_data = {
-            "n":           base_data.get("n", base_data.get("N", DEFAULT_TEMPLATE["n"])) * random.uniform(0.9, 1.1),
-            "p":           base_data.get("p", base_data.get("P", DEFAULT_TEMPLATE["p"])) * random.uniform(0.9, 1.1),
-            "k":           base_data.get("k", base_data.get("K", DEFAULT_TEMPLATE["k"])) * random.uniform(0.9, 1.1),
-            "temperature": base_data.get("temperature", DEFAULT_TEMPLATE["temperature"]) * random.uniform(0.95, 1.05),
-            "humidity":    base_data.get("humidity", DEFAULT_TEMPLATE["humidity"]) * random.uniform(0.95, 1.05),
-            "ph":          base_data.get("ph", DEFAULT_TEMPLATE["ph"]) * random.uniform(0.95, 1.05),
-            "rainfall":    base_data.get("rainfall", DEFAULT_TEMPLATE["rainfall"]) * random.uniform(0.9, 1.1),
+            "n":           base_data.get("n", base_data.get("N", 0)) * random.uniform(0.9, 1.1),
+            "p":           base_data.get("p", base_data.get("P", 0)) * random.uniform(0.9, 1.1),
+            "k":           base_data.get("k", base_data.get("K", 0)) * random.uniform(0.9, 1.1),
+            "temperature": base_data.get("temperature", 0) * random.uniform(0.95, 1.05),
+            "humidity":    base_data.get("humidity", 0) * random.uniform(0.95, 1.05),
+            "ph":          base_data.get("ph", 0) * random.uniform(0.95, 1.05),
+            "rainfall":    base_data.get("rainfall", 0) * random.uniform(0.9, 1.1),
         }
         try:
             result = predict(input_data)

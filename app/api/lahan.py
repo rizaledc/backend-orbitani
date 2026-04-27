@@ -185,8 +185,7 @@ def analyze_lahan(
             detail="Lahan tidak memiliki data koordinat. Tambahkan poligon terlebih dahulu.",
         )
 
-    # -- 2. Ambil data satelit terbaru sebagai template fitur ML (opsional) --
-    satellite_template: dict | None = None
+    # -- 2. Ambil data satelit terbaru sebagai template fitur ML --
     try:
         sat_res = (
             db.table("satellite_results")
@@ -196,13 +195,21 @@ def analyze_lahan(
             .limit(1)
             .execute()
         )
-        if sat_res.data:
-            satellite_template = sat_res.data[0]
-            logger.info("Menggunakan data satelit terbaru sebagai template fitur ML untuk lahan %d.", lahan_id)
-        else:
-            logger.info("Tidak ada data satelit untuk lahan %d, menggunakan nilai default.", lahan_id)
+        if not sat_res.data:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Lahan ini belum memiliki riwayat data satelit. Silakan tarik data satelit terlebih dahulu sebelum melakukan analisis spasial."
+            )
+        satellite_template = sat_res.data[0]
+        logger.info("Menggunakan data satelit terbaru sebagai template fitur ML untuk lahan %d.", lahan_id)
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.warning("Gagal mengambil data satelit lahan %d: %s. Menggunakan nilai default.", lahan_id, e)
+        logger.error("Gagal mengambil data satelit lahan %d: %s", lahan_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Terjadi kesalahan saat mengambil riwayat data satelit: {e}"
+        )
 
     # -- 3. Jalankan analisis spasial --
     try:
