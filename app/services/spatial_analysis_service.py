@@ -134,16 +134,16 @@ def _predict_and_aggregate(
     predictions: list[str] = []
 
     for i, (lon, lat) in enumerate(points):
-        # Variasi kecil per titik agar prediksi tidak identik semua
-        # (mencerminkan variabilitas spasial dalam lahan)
+        # Terapkan deviasi acak +/- 5% hingga 10% untuk mensimulasikan
+        # kondisi tanah/cuaca yang bervariasi di area poligon
         input_data = {
-            "n":           base_data.get("n", base_data.get("N", DEFAULT_TEMPLATE["n"])),
-            "p":           base_data.get("p", base_data.get("P", DEFAULT_TEMPLATE["p"])),
-            "k":           base_data.get("k", base_data.get("K", DEFAULT_TEMPLATE["k"])),
-            "temperature": base_data.get("temperature", DEFAULT_TEMPLATE["temperature"]),
-            "humidity":    base_data.get("humidity", DEFAULT_TEMPLATE["humidity"]),
-            "ph":          base_data.get("ph", DEFAULT_TEMPLATE["ph"]),
-            "rainfall":    base_data.get("rainfall", DEFAULT_TEMPLATE["rainfall"]),
+            "n":           base_data.get("n", base_data.get("N", DEFAULT_TEMPLATE["n"])) * random.uniform(0.9, 1.1),
+            "p":           base_data.get("p", base_data.get("P", DEFAULT_TEMPLATE["p"])) * random.uniform(0.9, 1.1),
+            "k":           base_data.get("k", base_data.get("K", DEFAULT_TEMPLATE["k"])) * random.uniform(0.9, 1.1),
+            "temperature": base_data.get("temperature", DEFAULT_TEMPLATE["temperature"]) * random.uniform(0.95, 1.05),
+            "humidity":    base_data.get("humidity", DEFAULT_TEMPLATE["humidity"]) * random.uniform(0.95, 1.05),
+            "ph":          base_data.get("ph", DEFAULT_TEMPLATE["ph"]) * random.uniform(0.95, 1.05),
+            "rainfall":    base_data.get("rainfall", DEFAULT_TEMPLATE["rainfall"]) * random.uniform(0.9, 1.1),
         }
         try:
             result = predict(input_data)
