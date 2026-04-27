@@ -151,6 +151,108 @@ def get_lahan_analytics(
 # ================================================================
 
 # ---------------------------------------------------------------
+# POST /{lahan_id}/analyze — Analisis Spasial & Rekomendasi Tanaman
+# ---------------------------------------------------------------
+@router.post("/{lahan_id}/analyze")
+def analyze_lahan(
+    lahan_id: int,
+    db: Client = Depends(get_supabase),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Melakukan analisis spasial pada lahan:
+      1. Sampling 10 titik acak di dalam poligon lahan.
+      2. Prediksi tanaman di tiap titik menggunakan model ML (Random Forest).
+      3. Agregasi hasil dengan Majority Voting → Top-3 rekomendasi (%).
+      4. Simpan hasil ke kolom `hasil_rekomendasi` dan `terakhir_dianalisis`.
+      5. Kembalikan data lahan yang sudah diperbarui.
+    """
+    from datetime import datetime, timezone
+    from app.services.spatial_analysis_service import run_spatial_analysis
+
+    # -- 1. Ambil & validasi lahan --
+    lahan_res = db.table("lahan").select("*").eq("id", lahan_id).execute()
+    if not lahan_res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lahan tidak ditemukan")
+
+    lahan = lahan_res.data[0]
+    _check_lahan_access(lahan, current_user)
+
+    koordinat = lahan.get("koordinat")
+    if not koordinat:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Lahan tidak memiliki data koordinat. Tambahkan poligon terlebih dahulu.",
+        )
+
+    # -- 2. Ambil data satelit terbaru sebagai template fitur ML (opsional) --
+    satellite_template: dict | None = None
+    try:
+        sat_res = (
+            db.table("satellite_results")
+            .select("n, p, k, temperature, humidity, ph, rainfall")
+            .eq("lahan_id", lahan_id)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if sat_res.data:
+            satellite_template = sat_res.data[0]
+            logger.info("Menggunakan data satelit terbaru sebagai template fitur ML untuk lahan %d.", lahan_id)
+        else:
+            logger.info("Tidak ada data satelit untuk lahan %d, menggunakan nilai default.", lahan_id)
+    except Exception as e:
+        logger.warning("Gagal mengambil data satelit lahan %d: %s. Menggunakan nilai default.", lahan_id, e)
+
+    # -- 3. Jalankan analisis spasial --
+    try:
+        hasil_rekomendasi = run_spatial_analysis(
+            koordinat=koordinat,
+            satellite_data_template=satellite_template,
+        )
+    except ValueError as e:
+        logger.error("Koordinat lahan %d tidak valid: %s", lahan_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Koordinat lahan tidak valid: {e}",
+        )
+    except RuntimeError as e:
+        logger.error("Analisis spasial lahan %d gagal: %s", lahan_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Analisis spasial gagal: {e}",
+        )
+
+    # -- 4. Simpan hasil ke database --
+    terakhir_dianalisis = datetime.now(timezone.utc).isoformat()
+    update_payload = {
+        "hasil_rekomendasi":  hasil_rekomendasi,
+        "terakhir_dianalisis": terakhir_dianalisis,
+    }
+
+    updated_res = db.table("lahan").update(update_payload).eq("id", lahan_id).execute()
+    if not updated_res.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Analisis selesai, tetapi gagal menyimpan hasil ke database.",
+        )
+
+    updated_lahan = updated_res.data[0]
+    logger.info(
+        "Analisis spasial lahan %d selesai oleh user %d. Top rekomendasi: %s",
+        lahan_id,
+        current_user["id"],
+        hasil_rekomendasi[0]["tanaman"] if hasil_rekomendasi else "N/A",
+    )
+
+    return {
+        "status":  "success",
+        "message": f"Analisis spasial selesai. {len(hasil_rekomendasi)} rekomendasi tanaman ditemukan.",
+        "data":    updated_lahan,
+    }
+
+
+# ---------------------------------------------------------------
 # GET /{lahan_id}/data — Data satelit lahan tertentu
 # ---------------------------------------------------------------
 @router.get("/{lahan_id}/data")

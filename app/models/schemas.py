@@ -180,5 +180,8 @@ class LahanOut(BaseModel):
     created_by: Optional[int] = None
     organization_id: Optional[int] = None
     created_at: Optional[str] = None
+    # Kolom analisis spasial (ditambahkan fase 2)
+    hasil_rekomendasi: Optional[Any] = None
+    terakhir_dianalisis: Optional[str] = None
 
     model_config = {"from_attributes": True}
