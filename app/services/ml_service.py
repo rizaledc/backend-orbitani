@@ -46,7 +46,7 @@ def calibrate_input(data: dict) -> dict:
       N   : NDVI*2.5+0.5 → 0.5–3.0   → mapping ke skala training 0–120
       P   : B3/B8*30+10  → 10–40      → mapping ke skala training 10–80
       K   : B11/B12*150+50 → 50–200   → mapping ke skala training 20–150
-      humidity : NDTI    → 0.002–0.005 → mapping ke skala training 65–85%
+      humidity : NDTI    → 0.1–0.5     → mapping ke persentase kelembapan 60–99%
       temperature : sudah Celsius dari GEE, langsung pakai
       rainfall : CHIRPS tahunan → dibagi 12 → bulanan (skala training max ~350)
     """
@@ -59,13 +59,13 @@ def calibrate_input(data: dict) -> dict:
     raw_ph = data.get("ph", 0)
     raw_rain = data.get("rainfall", data.get("rain", 0))
 
-    calibrated_n = raw_n * 20       # GEE (1-3) -> menjadi skala 20-60
-    calibrated_p = raw_p            # P sudah dalam batas aman
-    calibrated_k = raw_k / 2        # GEE (>300) -> ditekan ke skala ~150
-    calibrated_temp = raw_temp      # Aman
-    calibrated_hum = raw_hum        # Aman
-    calibrated_ph = raw_ph          # Aman
-    calibrated_rain = raw_rain / 12 # GEE (Tahunan) -> diubah ke Bulanan
+    calibrated_n = raw_n * 20                         # GEE (1-3) -> menjadi skala 20-60
+    calibrated_p = raw_p                              # P sudah dalam batas aman
+    calibrated_k = raw_k / 2                          # GEE (>300) -> ditekan ke skala ~150
+    calibrated_temp = raw_temp                        # Aman
+    calibrated_hum = min(60 + (raw_hum * 60), 99.0)  # NDTI (0.0-0.5) -> kelembapan % (60-99)
+    calibrated_ph = raw_ph                            # Aman
+    calibrated_rain = raw_rain / 12                   # GEE (Tahunan) -> diubah ke Bulanan
 
     return {
         "N":           float(calibrated_n),
