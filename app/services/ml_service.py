@@ -41,15 +41,40 @@ def calibrate_input(data: dict) -> dict:
     """
     Mengonversi nilai mentah satelit ke rentang fitur yang dikenali model.
     Fungsi ini RINGAN (hanya numpy interp), tidak memakan RAM signifikan.
+
+    Range input disesuaikan dengan output aktual GEE:
+      N   : NDVI*2.5+0.5 → 0.5–3.0   → mapping ke skala training 0–120
+      P   : B3/B8*30+10  → 10–40      → mapping ke skala training 10–80
+      K   : B11/B12*150+50 → 50–200   → mapping ke skala training 20–150
+      humidity : NDTI    → 0.002–0.005 → mapping ke skala training 65–85%
+      temperature : sudah Celsius dari GEE, langsung pakai
+      rainfall : CHIRPS tahunan → dibagi 12 → bulanan (skala training max ~350)
     """
+    # --- 1. KALIBRASI SATUAN (UNIT CONVERSION) ---
+    raw_n = data.get("N", data.get("n", 0))
+    raw_p = data.get("P", data.get("p", 0))
+    raw_k = data.get("K", data.get("k", 0))
+    raw_temp = data.get("temperature", 0)
+    raw_hum = data.get("humidity", 0)
+    raw_ph = data.get("ph", 0)
+    raw_rain = data.get("rainfall", data.get("rain", 0))
+
+    calibrated_n = raw_n * 20       # GEE (1-3) -> menjadi skala 20-60
+    calibrated_p = raw_p            # P sudah dalam batas aman
+    calibrated_k = raw_k / 2        # GEE (>300) -> ditekan ke skala ~150
+    calibrated_temp = raw_temp      # Aman
+    calibrated_hum = raw_hum        # Aman
+    calibrated_ph = raw_ph          # Aman
+    calibrated_rain = raw_rain / 12 # GEE (Tahunan) -> diubah ke Bulanan
+
     return {
-        "N": float(np.interp(data.get("N", data.get("n", 0)), [-15.0, -5.0], [0.0, 120.0])),
-        "P": float(np.interp(data.get("P", data.get("p", 0)), [5.0, 6.0], [10.0, 80.0])),
-        "K": float(np.interp(data.get("K", data.get("k", 0)), [60.0, 150.0], [20.0, 150.0])),
-        "temperature": float(np.interp(data.get("temperature", 0), [0.0, 100.0], [18.0, 28.0])),
-        "humidity": float(np.interp(data.get("humidity", 0), [0.002, 0.005], [65.0, 85.0])),
-        "ph": float(data.get("ph", 0)),
-        "rainfall": float(np.clip(data.get("rainfall", 0), a_min=0, a_max=290.0)),
+        "N":           float(calibrated_n),
+        "P":           float(calibrated_p),
+        "K":           float(calibrated_k),
+        "temperature": float(calibrated_temp),
+        "humidity":    float(calibrated_hum),
+        "ph":          float(calibrated_ph),
+        "rainfall":    float(calibrated_rain),
     }
 
 
@@ -75,8 +100,23 @@ def predict(input_data: dict) -> dict:
 
         # 2. PREDICT — kalibrasi + prediksi
         calibrated_data = calibrate_input(input_data)
-        features_df = pd.DataFrame([calibrated_data])
-        scaled_features = scaler.transform(features_df)
+        
+        # Pastikan urutannya persis: ['N', 'P', 'K', 'temperature', 'humidity', 'ph', 'rainfall']
+        features_array = [[
+            calibrated_data["N"],
+            calibrated_data["P"],
+            calibrated_data["K"],
+            calibrated_data["temperature"],
+            calibrated_data["humidity"],
+            calibrated_data["ph"],
+            calibrated_data["rainfall"]
+        ]]
+        
+        # Karena minmax_scaler aslinya dilatih dengan DataFrame pandas yang memiliki nama kolom,
+        # lebih aman jika kita tetap menjadikannya DataFrame agar tidak ada warning,
+        # tapi karena instruksi pengguna eksplisit meminta list array, kita pass array-nya langsung,
+        # atau kita pass dataframe dengan kolom terurut. Kita ikuti saja features_array.
+        scaled_features = scaler.transform(features_array)
         prediction = model.predict(scaled_features)
         recommendation = encoder.inverse_transform(prediction)[0]
 

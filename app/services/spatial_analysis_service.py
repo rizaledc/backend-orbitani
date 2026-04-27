@@ -128,6 +128,19 @@ def _predict_and_aggregate(
         try:
             result = predict(input_data)
             tanaman = result.get("ai_recommendation", "Unknown")
+            
+            # Ganti data mentah dengan data terkalibrasi agar frontend dan DB mendapatkan nilai yang wajar
+            calibrated = result.get("calibrated_data", {})
+            if calibrated:
+                data["n"] = calibrated.get("N", data.get("n"))
+                data["p"] = calibrated.get("P", data.get("p"))
+                data["k"] = calibrated.get("K", data.get("k"))
+                data["temperature"] = calibrated.get("temperature", data.get("temperature"))
+                data["humidity"] = calibrated.get("humidity", data.get("humidity"))
+                data["ph"] = calibrated.get("ph", data.get("ph"))
+                data["rainfall"] = calibrated.get("rainfall", data.get("rainfall"))
+            
+            data["calibrated"] = calibrated
             data["ai_recommendation"] = tanaman
             predictions.append(tanaman)
             logger.debug("Titik %d/%d (lon=%.4f, lat=%.4f) → %s", i + 1, len(points_data), data.get("lon"), data.get("lat"), tanaman)

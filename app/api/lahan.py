@@ -246,6 +246,22 @@ def analyze_lahan(
         )
 
     updated_lahan = updated_res.data[0]
+
+    # Hitung rata-rata fitur (dari nilai terkalibrasi) untuk disertakan di response
+    rata_rata_fitur = {}
+    if data_lengkap_titik:
+        n_pts = len(data_lengkap_titik)
+        cal_list = [pt.get("calibrated", {}) for pt in data_lengkap_titik]
+        rata_rata_fitur = {
+            "n":           round(sum(c.get("N", 0) for c in cal_list) / n_pts, 2),
+            "p":           round(sum(c.get("P", 0) for c in cal_list) / n_pts, 2),
+            "k":           round(sum(c.get("K", 0) for c in cal_list) / n_pts, 2),
+            "ph":          round(sum(c.get("ph", 0) for c in cal_list) / n_pts, 2),
+            "temperature": round(sum(c.get("temperature", 0) for c in cal_list) / n_pts, 2),
+            "humidity":    round(sum(c.get("humidity", 0) for c in cal_list) / n_pts, 2),
+            "rainfall":    round(sum(c.get("rainfall", 0) for c in cal_list) / n_pts, 2),
+        }
+
     logger.info(
         "Analisis spasial lahan %d selesai oleh user %d. Top rekomendasi: %s",
         lahan_id,
@@ -257,6 +273,7 @@ def analyze_lahan(
         "status":  "success",
         "message": f"Analisis spasial selesai. {len(hasil_rekomendasi)} rekomendasi tanaman ditemukan.",
         "data":    updated_lahan,
+        "rata_rata_fitur": rata_rata_fitur,
     }
 
 
