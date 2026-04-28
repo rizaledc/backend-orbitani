@@ -40,11 +40,12 @@ def calibrate_input(data: dict) -> dict:
     Fungsi ini RINGAN (hanya numpy interp), tidak memakan RAM signifikan.
 
     Range input disesuaikan dengan output aktual GEE:
-      N   : NDVI*2.5+0.5 → 0.5–3.0   → mapping ke skala training 0–120
-      P   : B3/B8*30+10  → 10–40      → mapping ke skala training 10–80
-      K   : B11/B12*150+50 → 50–200   → mapping ke skala training 20–150
-      humidity : NDTI    → 0.1–0.5     → mapping ke persentase kelembapan 70–99%
-      temperature : sudah Celsius dari GEE, langsung pakai
+      N   : Formula regresi GEE → sudah dalam mg/kg, langsung pakai
+      P   : Formula regresi GEE → sudah dalam mg/100g, langsung pakai
+      K   : Formula regresi GEE → sudah dalam mg/kg, langsung pakai
+      pH  : Formula regresi GEE → sudah dalam skala pH, langsung pakai
+      humidity : NDTI fallback atau ERA5 RH → %
+      temperature : sudah Celsius dari GEE, offset empiris
       rainfall : CHIRPS 30 hari → sudah bulanan langsung (tidak perlu /12)
     """
     # --- 1. KALIBRASI SATUAN (UNIT CONVERSION) ---
@@ -56,9 +57,9 @@ def calibrate_input(data: dict) -> dict:
     raw_ph = data.get("ph", 0)
     raw_rain = data.get("rainfall", data.get("rain", 0))
 
-    calibrated_n = raw_n * 20                         # GEE (1-3) -> menjadi skala 20-60
-    calibrated_p = raw_p                              # P sudah dalam batas aman
-    calibrated_k = raw_k / 6                          # GEE (~240-375) -> ditekan ke skala ~40-62 (avg training: 48)
+    calibrated_n = raw_n                              # Formula regresi GEE -> sudah mg/kg
+    calibrated_p = raw_p                              # Formula regresi GEE -> sudah mg/100g
+    calibrated_k = raw_k                              # Formula regresi GEE -> sudah mg/kg
     calibrated_temp = raw_temp - 3.0                   # LST satelit → suhu udara (offset empiris)
     # ERA5 RH sudah dalam % (nilai > 1.0); NDTI dalam skala 0.0-0.5 (nilai <= 1.0)
     if raw_hum > 1.0:

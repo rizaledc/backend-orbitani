@@ -178,27 +178,66 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
             .median()
         )
 
-        # Band Mapping Sentinel-2 (Harmonized, scaled by 0.0001):
+        # Band Mapping Sentinel-2 SR Harmonized (reflektansi 0-1 setelah _preprocess_s2):
         # B2=Blue, B3=Green, B4=Red, B8=NIR, B11=SWIR1, B12=SWIR2
-        
-        # 1. NITROGEN (N): Gunakan NDRE (Normalized Difference Red Edge) proxy
-        # Rumus asli NDRE butuh B5, tapi kita gunakan (NIR - Red) / (NIR + Red) lalu diskalakan agar realistis (0 - 2.5%)
-        # Menghindari nilai negatif
-        ndvi = sentinel2.normalizedDifference(["B8", "B4"])
-        n_index = ndvi.multiply(2.5).add(0.5).rename("N") 
-        
-        # 2. PH TANAH: Tropis cenderung asam. Gunakan rasio Blue/Red dengan baseline 5.0
-        # Jika pantulan merah lebih tinggi (tanah kering/oksida besi), pH cenderung turun.
-        ph_index = sentinel2.select("B2").divide(sentinel2.select("B4")).multiply(1.5).add(4.5).rename("ph")
-        
-        # 3. FOSFOR (P) & KALIUM (K): Dikalibrasi agar masuk akal dalam satuan ppm
-        # P biasanya rendah di tanah asam (terikat). Skala: 10 - 40 ppm
-        p_index = sentinel2.select("B3").divide(sentinel2.select("B8")).multiply(30).add(10).rename("P")
-        
-        # K menggunakan SWIR karena sensitif terhadap mineral lempung. Skala: 100 - 300 ppm
-        k_index = sentinel2.select("B11").divide(sentinel2.select("B12")).multiply(150).add(50).rename("K")
-        
-        # 4. HUMIDITY: NDTI sudah cukup baik, biarkan saja
+        B2  = sentinel2.select("B2")
+        B3  = sentinel2.select("B3")
+        B4  = sentinel2.select("B4")
+        B8  = sentinel2.select("B8")
+        B11 = sentinel2.select("B11")
+        B12 = sentinel2.select("B12")
+
+        # 1. NITROGEN (N) — Regresi multivariabel (mg/kg)
+        # N = -31.661 + 186.022*B - 364.274*G + 421.943*R - 308.068*NIR + 207.957*SWIR1 - 12.762*SWIR2
+        n_index = (
+            B2.multiply(186.022)
+            .subtract(B3.multiply(364.274))
+            .add(B4.multiply(421.943))
+            .subtract(B8.multiply(308.068))
+            .add(B11.multiply(207.957))
+            .subtract(B12.multiply(12.762))
+            .subtract(31.661)
+            .rename("N")
+        )
+
+        # 2. FOSFOR (P) — Regresi multivariabel (mg/100g)
+        # P = 0.404 - 2.702*B + 22.540*G - 14.156*R + 3.613*NIR - 2.648*SWIR1 + 2.304*SWIR2
+        p_index = (
+            B3.multiply(22.540)
+            .subtract(B2.multiply(2.702))
+            .subtract(B4.multiply(14.156))
+            .add(B8.multiply(3.613))
+            .subtract(B11.multiply(2.648))
+            .add(B12.multiply(2.304))
+            .add(0.404)
+            .rename("P")
+        )
+
+        # 3. KALIUM (K) — Regresi multivariabel (mg/kg)
+        # K = -610.060 - 1424.543*R + 933.043*SWIR2 + 4103.577*G - 1733.486*B
+        k_index = (
+            B3.multiply(4103.577)
+            .subtract(B2.multiply(1733.486))
+            .subtract(B4.multiply(1424.543))
+            .add(B12.multiply(933.043))
+            .subtract(610.060)
+            .rename("K")
+        )
+
+        # 4. pH TANAH — Regresi multivariabel
+        # pH = 3.983 - 0.544*B - 1.112*G + 6.131*R + 2.193*NIR - 1.647*SWIR1 + 2.739*SWIR2
+        ph_index = (
+            B4.multiply(6.131)
+            .subtract(B2.multiply(0.544))
+            .subtract(B3.multiply(1.112))
+            .add(B8.multiply(2.193))
+            .subtract(B11.multiply(1.647))
+            .add(B12.multiply(2.739))
+            .add(3.983)
+            .rename("ph")
+        )
+
+        # 5. HUMIDITY: NDTI (Sentinel-2) sebagai fallback jika ERA5 tidak tersedia
         ndti = sentinel2.normalizedDifference(["B11", "B12"]).rename("humidity")
 
         # Komposit optik Sentinel-2 (NDTI tetap disertakan sebagai fallback humidity)
@@ -474,13 +513,40 @@ def extract_multi_point_data(polygon_coords: list[list[float]], points: list[tup
             .median()
         )
 
-        ndvi = sentinel2.normalizedDifference(["B8", "B4"])
-        n_index = ndvi.multiply(2.5).add(0.5).rename("N") 
-        ph_index = sentinel2.select("B2").divide(sentinel2.select("B4")).multiply(1.5).add(4.5).rename("ph")
-        p_index = sentinel2.select("B3").divide(sentinel2.select("B8")).multiply(30).add(10).rename("P")
-        k_index = sentinel2.select("B11").divide(sentinel2.select("B12")).multiply(150).add(50).rename("K")
+        # Band Mapping Sentinel-2 SR Harmonized (reflektansi 0-1 setelah _preprocess_s2):
+        B2  = sentinel2.select("B2")
+        B3  = sentinel2.select("B3")
+        B4  = sentinel2.select("B4")
+        B8  = sentinel2.select("B8")
+        B11 = sentinel2.select("B11")
+        B12 = sentinel2.select("B12")
+
+        # N = -31.661 + 186.022*B - 364.274*G + 421.943*R - 308.068*NIR + 207.957*SWIR1 - 12.762*SWIR2
+        n_index = (
+            B2.multiply(186.022).subtract(B3.multiply(364.274)).add(B4.multiply(421.943))
+            .subtract(B8.multiply(308.068)).add(B11.multiply(207.957)).subtract(B12.multiply(12.762))
+            .subtract(31.661).rename("N")
+        )
+        # P = 0.404 - 2.702*B + 22.540*G - 14.156*R + 3.613*NIR - 2.648*SWIR1 + 2.304*SWIR2
+        p_index = (
+            B3.multiply(22.540).subtract(B2.multiply(2.702)).subtract(B4.multiply(14.156))
+            .add(B8.multiply(3.613)).subtract(B11.multiply(2.648)).add(B12.multiply(2.304))
+            .add(0.404).rename("P")
+        )
+        # K = -610.060 - 1424.543*R + 933.043*SWIR2 + 4103.577*G - 1733.486*B
+        k_index = (
+            B3.multiply(4103.577).subtract(B2.multiply(1733.486)).subtract(B4.multiply(1424.543))
+            .add(B12.multiply(933.043)).subtract(610.060).rename("K")
+        )
+        # pH = 3.983 - 0.544*B - 1.112*G + 6.131*R + 2.193*NIR - 1.647*SWIR1 + 2.739*SWIR2
+        ph_index = (
+            B4.multiply(6.131).subtract(B2.multiply(0.544)).subtract(B3.multiply(1.112))
+            .add(B8.multiply(2.193)).subtract(B11.multiply(1.647)).add(B12.multiply(2.739))
+            .add(3.983).rename("ph")
+        )
         ndti = sentinel2.normalizedDifference(["B11", "B12"]).rename("humidity")
 
+        # NDTI tetap disertakan di composite sebagai fallback humidity
         optical_composite = n_index.addBands([p_index, k_index, ph_index, ndti])
 
         optical_stats = optical_composite.reduceRegions(
