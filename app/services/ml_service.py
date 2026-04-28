@@ -116,11 +116,6 @@ def predict(input_data: dict) -> dict:
         # Terapkan log1p pada rainfall sesuai preprocessing model baru
         features_array[0][6] = np.log1p(features_array[0][6])
 
-        # DEBUG: Log nilai fitur sebelum scaling (hapus setelah verifikasi)
-        logger.info("[DEBUG] features_array BEFORE scaler: N=%.2f, P=%.2f, K=%.2f, temp=%.2f, hum=%.2f, ph=%.2f, rain(log1p)=%.2f",
-                    features_array[0][0], features_array[0][1], features_array[0][2],
-                    features_array[0][3], features_array[0][4], features_array[0][5],
-                    features_array[0][6])
 
         scaled_features = scaler.transform(features_array)
         prediction = model.predict(scaled_features)
