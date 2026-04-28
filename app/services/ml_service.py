@@ -60,7 +60,11 @@ def calibrate_input(data: dict) -> dict:
     calibrated_p = raw_p                              # P sudah dalam batas aman
     calibrated_k = raw_k / 6                          # GEE (~240-375) -> ditekan ke skala ~40-62 (avg training: 48)
     calibrated_temp = raw_temp - 3.0                   # LST satelit → suhu udara (offset empiris)
-    calibrated_hum = min(70 + (raw_hum * 60), 99.0)  # NDTI (0.0-0.5) -> kelembapan % (70-99)
+    # ERA5 RH sudah dalam % (nilai > 1.0); NDTI dalam skala 0.0-0.5 (nilai <= 1.0)
+    if raw_hum > 1.0:
+        calibrated_hum = min(max(raw_hum, 0.0), 99.0)  # ERA5 RH -> langsung pakai (sudah %)
+    else:
+        calibrated_hum = min(70 + (raw_hum * 60), 99.0)  # NDTI fallback -> konversi ke %
     calibrated_ph = raw_ph                            # Aman
     calibrated_rain = raw_rain                     # CHIRPS 30 hari → sudah dalam satuan bulanan
 
