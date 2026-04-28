@@ -12,6 +12,7 @@ import logging
 import os
 
 import joblib
+import numpy as np
 import warnings
 
 # Suppress sklearn InconsistentVersionWarning due to version mismatch
@@ -107,7 +108,10 @@ def predict(input_data: dict) -> dict:
             calibrated_data["ph"],
             calibrated_data["rainfall"]
         ]]
-        
+
+        # Terapkan log1p pada rainfall sesuai preprocessing model baru
+        features_array[0][6] = np.log1p(features_array[0][6])
+
         scaled_features = scaler.transform(features_array)
         prediction = model.predict(scaled_features)
         recommendation = encoder.inverse_transform(prediction)[0]
