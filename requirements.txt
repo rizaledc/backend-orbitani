@@ -15,3 +15,5 @@ python-dotenv
 google-genai>=1.0.0
 gunicorn
 shapely
+# model-version: v2-log1p-20260428
+
