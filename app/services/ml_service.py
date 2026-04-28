@@ -58,7 +58,7 @@ def calibrate_input(data: dict) -> dict:
 
     calibrated_n = raw_n * 20                         # GEE (1-3) -> menjadi skala 20-60
     calibrated_p = raw_p                              # P sudah dalam batas aman
-    calibrated_k = raw_k / 2                          # GEE (>300) -> ditekan ke skala ~150
+    calibrated_k = raw_k / 6                          # GEE (~240-375) -> ditekan ke skala ~40-62 (avg training: 48)
     calibrated_temp = raw_temp - 3.0                   # LST satelit → suhu udara (offset empiris)
     calibrated_hum = min(70 + (raw_hum * 60), 99.0)  # NDTI (0.0-0.5) -> kelembapan % (70-99)
     calibrated_ph = raw_ph                            # Aman
@@ -111,6 +111,12 @@ def predict(input_data: dict) -> dict:
 
         # Terapkan log1p pada rainfall sesuai preprocessing model baru
         features_array[0][6] = np.log1p(features_array[0][6])
+
+        # DEBUG: Log nilai fitur sebelum scaling (hapus setelah verifikasi)
+        logger.info("[DEBUG] features_array BEFORE scaler: N=%.2f, P=%.2f, K=%.2f, temp=%.2f, hum=%.2f, ph=%.2f, rain(log1p)=%.2f",
+                    features_array[0][0], features_array[0][1], features_array[0][2],
+                    features_array[0][3], features_array[0][4], features_array[0][5],
+                    features_array[0][6])
 
         scaled_features = scaler.transform(features_array)
         prediction = model.predict(scaled_features)
