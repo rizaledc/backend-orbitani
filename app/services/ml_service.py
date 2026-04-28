@@ -45,7 +45,7 @@ def calibrate_input(data: dict) -> dict:
       K   : B11/B12*150+50 → 50–200   → mapping ke skala training 20–150
       humidity : NDTI    → 0.1–0.5     → mapping ke persentase kelembapan 70–99%
       temperature : sudah Celsius dari GEE, langsung pakai
-      rainfall : CHIRPS tahunan → dibagi 12 → bulanan (skala training max ~350)
+      rainfall : CHIRPS 30 hari → sudah bulanan langsung (tidak perlu /12)
     """
     # --- 1. KALIBRASI SATUAN (UNIT CONVERSION) ---
     raw_n = data.get("N", data.get("n", 0))
@@ -62,7 +62,7 @@ def calibrate_input(data: dict) -> dict:
     calibrated_temp = raw_temp - 3.0                   # LST satelit → suhu udara (offset empiris)
     calibrated_hum = min(70 + (raw_hum * 60), 99.0)  # NDTI (0.0-0.5) -> kelembapan % (70-99)
     calibrated_ph = raw_ph                            # Aman
-    calibrated_rain = raw_rain / 12                   # GEE (Tahunan) -> diubah ke Bulanan
+    calibrated_rain = raw_rain                     # CHIRPS 30 hari → sudah dalam satuan bulanan
 
     return {
         "N":           float(calibrated_n),

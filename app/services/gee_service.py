@@ -201,8 +201,39 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
         # 4. HUMIDITY: NDTI sudah cukup baik, biarkan saja
         ndti = sentinel2.normalizedDifference(["B11", "B12"]).rename("humidity")
 
-        # Komposit optik Sentinel-2
+        # Komposit optik Sentinel-2 (NDTI tetap disertakan sebagai fallback humidity)
         optical_composite = n_index.addBands([p_index, k_index, ph_index, ndti])
+
+        # =====================================================================
+        # 3.3 ERA5 Land: Relative Humidity via Magnus Formula — Resolusi ~9km
+        # =====================================================================
+        import math
+        era5 = (
+            ee.ImageCollection("ECMWF/ERA5_LAND/HOURLY")
+            .filterDate(date_start_str, date_end_str)
+            .select(["temperature_2m", "dewpoint_temperature_2m"])
+            .mean()
+        )
+        era5_dict = era5.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=roi_geom.centroid().buffer(9000),
+            scale=9000,
+            maxPixels=1e9
+        ).getInfo()
+
+        era5_t2m  = era5_dict.get("temperature_2m")
+        era5_td2m = era5_dict.get("dewpoint_temperature_2m")
+
+        if era5_t2m is not None and era5_td2m is not None:
+            T_c     = float(era5_t2m)  - 273.15
+            Td_c    = float(era5_td2m) - 273.15
+            era5_rh = 100.0 * math.exp(17.625 * Td_c / (243.04 + Td_c)) \
+                             / math.exp(17.625 * T_c  / (243.04 + T_c))
+            era5_rh = min(max(era5_rh, 0.0), 100.0)
+            logger.info("ERA5 humidity (RH) berhasil: %.2f%%", era5_rh)
+        else:
+            era5_rh = None
+            logger.warning("ERA5 humidity null — fallback ke NDTI Sentinel-2.")
 
         # =====================================================================
         # 3.5 HYBRID TEMPERATURE (Landsat 8+9 Primary, MODIS Fallback)
@@ -266,12 +297,14 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
                 logger.warning("MODIS juga gagal. Menggunakan suhu fallback rata-rata 26.5 C")
 
         # =====================================================================
-        # 4. HYBRID RAINFALL (CHIRPS Primary, GPM Fallback)
+        # 4. HYBRID RAINFALL (CHIRPS Primary, GPM Fallback) — 30 hari terakhir
         # =====================================================================
-        # Coba CHIRPS (mm/day)
+        # Gunakan 30 hari terakhir agar mencerminkan kondisi aktual bulan berjalan
+        chirps_start     = end_date - timedelta(days=30)
+        chirps_start_str = chirps_start.strftime("%Y-%m-%d")
         chirps = (
             ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
-            .filterDate(date_start_str, date_end_str)
+            .filterDate(chirps_start_str, date_end_str)
             .filterBounds(roi_geom)
             .select("precipitation").sum()
         )
@@ -285,20 +318,20 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
         
         rainfall_val = rain_dict_chirps.get("precipitation")
         
-        # Jika CHIRPS null atau 0 (karena latency dataset)
-        if rainfall_val is None or float(rainfall_val) < 100:
+        # Jika CHIRPS null atau sangat kecil (< 10 mm/bulan, indikasi data belum tersedia)
+        if rainfall_val is None or float(rainfall_val) < 10:
             logger.warning("CHIRPS data unavailable/incomplete. Falling back to GPM IMERG V07...")
             
-            # GPM IMERG V07 (mm/hr, tiap 30 menit)
+            # GPM IMERG V07 (mm/hr, tiap 30 menit) — window 30 hari
             gpm = (
                 ee.ImageCollection("NASA/GPM_L3/IMERG_V07")
-                .filterDate(date_start_str, date_end_str)
+                .filterDate(chirps_start_str, date_end_str)
                 .filterBounds(roi_geom)
                 .select("precipitation")
             )
-            
-            # Trik efisiensi: Cari rata-rata mm/jam setahun, lalu kalikan 24 jam * 365 hari
-            gpm_annual = gpm.mean().multiply(24).multiply(365)
+
+            # mean mm/jam × 24 jam × 30 hari → estimasi curah hujan bulanan
+            gpm_annual = gpm.mean().multiply(24).multiply(30)
             
             rain_dict_gpm = gpm_annual.reduceRegion(
                 reducer=ee.Reducer.mean(),
@@ -310,7 +343,7 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
             rainfall_val = rain_dict_gpm.get("precipitation")
             
             # Jika GPM juga masih gagal, baru pakai hard fallback
-            if rainfall_val is None or float(rainfall_val) < 100:
+            if rainfall_val is None or float(rainfall_val) < 10:
                 rainfall_val = 3500.0
                 logger.warning("GPM also failed. Using hard fallback 3500 mm.")
 
@@ -347,6 +380,9 @@ def process_point_satellite_data(lahan_id: int, lat: float, lon: float) -> dict:
         if valid_optical > 0:
             for key in ["N", "P", "K", "ph", "humidity"]:
                 avg_stats[key] /= valid_optical
+            # Override humidity dengan ERA5 RH (lebih akurat meteorologis)
+            if era5_rh is not None:
+                avg_stats["humidity"] = era5_rh
         else:
             return {"error": "Zero Result", "message": "Tidak ada sinyal Sentinel-2 yang valid pada ke-10 titik tersebut."}
 
@@ -453,6 +489,37 @@ def extract_multi_point_data(polygon_coords: list[list[float]], points: list[tup
             scale=10
         ).getInfo()
 
+        # =====================================================================
+        # ERA5 Land: Relative Humidity via Magnus Formula — Resolusi ~9km
+        # =====================================================================
+        import math
+        era5 = (
+            ee.ImageCollection("ECMWF/ERA5_LAND/HOURLY")
+            .filterDate(date_start_str, date_end_str)
+            .select(["temperature_2m", "dewpoint_temperature_2m"])
+            .mean()
+        )
+        era5_dict = era5.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=roi_geom.centroid().buffer(9000),
+            scale=9000,
+            maxPixels=1e9
+        ).getInfo()
+
+        era5_t2m  = era5_dict.get("temperature_2m")
+        era5_td2m = era5_dict.get("dewpoint_temperature_2m")
+
+        if era5_t2m is not None and era5_td2m is not None:
+            T_c     = float(era5_t2m)  - 273.15
+            Td_c    = float(era5_td2m) - 273.15
+            era5_rh = 100.0 * math.exp(17.625 * Td_c / (243.04 + Td_c)) \
+                             / math.exp(17.625 * T_c  / (243.04 + T_c))
+            era5_rh = min(max(era5_rh, 0.0), 100.0)
+            logger.info("ERA5 humidity (RH multi-point) berhasil: %.2f%%", era5_rh)
+        else:
+            era5_rh = None
+            logger.warning("ERA5 humidity null — fallback ke NDTI Sentinel-2.")
+
         # 3. Hybrid Temperature (Centroid)
         centroid = roi_geom.centroid()
         
@@ -471,17 +538,19 @@ def extract_multi_point_data(polygon_coords: list[list[float]], points: list[tup
             if temp_val is None:
                 temp_val = 26.5
 
-        # 4. Hybrid Rainfall (Centroid)
-        chirps = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY").filterDate(date_start_str, date_end_str).filterBounds(roi_geom).select("precipitation").sum()
+        # 4. Hybrid Rainfall (Centroid) — 30 hari terakhir
+        chirps_start     = end_date - timedelta(days=30)
+        chirps_start_str = chirps_start.strftime("%Y-%m-%d")
+        chirps = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY").filterDate(chirps_start_str, date_end_str).filterBounds(roi_geom).select("precipitation").sum()
         rain_dict = chirps.reduceRegion(ee.Reducer.mean(), centroid.buffer(5000), 5000).getInfo()
         rainfall_val = rain_dict.get("precipitation")
-        
-        if rainfall_val is None or float(rainfall_val) < 100:
-            gpm = ee.ImageCollection("NASA/GPM_L3/IMERG_V07").filterDate(date_start_str, date_end_str).filterBounds(roi_geom).select("precipitation")
-            gpm_annual = gpm.mean().multiply(24).multiply(365)
-            rain_dict = gpm_annual.reduceRegion(ee.Reducer.mean(), centroid.buffer(11000), 11132).getInfo()
+
+        if rainfall_val is None or float(rainfall_val) < 10:
+            gpm = ee.ImageCollection("NASA/GPM_L3/IMERG_V07").filterDate(chirps_start_str, date_end_str).filterBounds(roi_geom).select("precipitation")
+            gpm_monthly = gpm.mean().multiply(24).multiply(30)
+            rain_dict = gpm_monthly.reduceRegion(ee.Reducer.mean(), centroid.buffer(11000), 11132).getInfo()
             rainfall_val = rain_dict.get("precipitation")
-            if rainfall_val is None or float(rainfall_val) < 100:
+            if rainfall_val is None or float(rainfall_val) < 10:
                 rainfall_val = 3500.0
 
         # 5. Gabungkan Data
@@ -499,7 +568,8 @@ def extract_multi_point_data(polygon_coords: list[list[float]], points: list[tup
                 "p": float(props.get("P") or 0.0),
                 "k": float(props.get("K") or 0.0),
                 "ph": float(props.get("ph") or 0.0),
-                "humidity": float(props.get("humidity") or 0.0),
+                # ERA5 RH jika tersedia, fallback ke NDTI
+                "humidity": float(era5_rh) if era5_rh is not None else float(props.get("humidity") or 0.0),
                 "temperature": float(temp_val),
                 "rainfall": float(rainfall_val)
             })
